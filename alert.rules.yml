@@ -1,0 +1,23 @@
+# Example Prometheus alerting rules  
+groups:  
+  - name: mongodb-atlas-alerts  
+    rules:  
+      - alert: HighConnectionUtilization  
+        expr: mongodb_atlas_connections_current / mongodb_atlas_connections_available > 0.8  
+        for: 5m  
+        labels:  
+          severity: warning  
+        annotations:  
+          summary: "High connection utilization on {{ $labels.cluster }}"  
+      
+      - alert: ReplicationLagHigh  
+        expr: mongodb_atlas_replication_lag_seconds > 10  
+        for: 2m  
+        labels:  
+          severity: critical  
+          
+      - alert: DiskSpaceLow  
+        expr: mongodb_atlas_disk_partition_utilization_percent > 85  
+        for: 10m  
+        labels:  
+          severity: warning  
