@@ -1,0 +1,149 @@
+# =============================================================================
+# Prometheus Configuration for MongoDB Atlas
+# Based on Atlas Prometheus Integration best practices
+# Requires: Atlas M10+ cluster with Prometheus integration enabled
+# =============================================================================
+
+global:
+  scrape_interval: 60s         # Atlas metrics update every 60s; scraping faster wastes bandwidth
+  evaluation_interval: 60s     # Align rule evaluation with scrape cadence
+  scrape_timeout: 30s
+
+  # Applied to all time series -- useful for multi-cluster or multi-team setups
+  external_labels:
+    monitor: "atlas-prometheus"
+    org: "your-org-name"       # Replace with your organization name
+
+# =============================================================================
+# Alertmanager Integration
+# =============================================================================
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+# =============================================================================
+# Recording and Alerting Rules
+# =============================================================================
+rule_files:
+  - "rules/atlas_recording_rules.yml"
+  - "rules/atlas_alerting_rules.yml"
+
+# =============================================================================
+# Scrape Configurations
+# =============================================================================
+scrape_configs:
+
+  # ---------------------------------------------------------------------------
+  # MongoDB Atlas Federation Endpoint -- Production Clusters
+  # ---------------------------------------------------------------------------
+  - job_name: "mongodb_atlas_production"
+
+    scheme: https
+    metrics_path: /prometheus/v1/groups/675b10a0c58ca56ec9052775/metrics  # Replace <GROUP_ID>
+
+    basic_auth:
+      username: "prom_udemo"               # Replace
+      password: "prom_up4ss"               # Replace
+
+    static_configs:
+      - targets:
+          - "cloud.mongodb.com"
+        labels:
+          environment: "production"
+          cloud_provider: "atlas"
+          cluster_tier: "M20"                               # Replace with your tier
+
+    # --- Target Relabeling (before scrape) ---
+    # Enrich all metrics with team and region context at scrape time
+    relabel_configs:
+      - target_label: team
+        replacement: "platform-engineering"                 # Replace with your team
+
+      - target_label: region
+        replacement: "us-east-1"                           # Replace with your Atlas region
+
+      # Keep only targets matching production cluster naming convention
+      - source_labels: [__address__]
+        regex: ".*prod.*|cloud\\.mongodb\\.com"
+        action: keep
+
+    # --- Metric Relabeling (after scrape, before storage) ---
+    metric_relabel_configs:
+
+      # -- DROP: WiredTiger internal cache details (high volume, low alert value)
+      - source_labels: [__name__]
+        regex: "mongodb_mongod_wiredtiger_cache.*"
+        action: drop
+
+      # -- DROP: Low-level WiredTiger transaction and concurrency internals
+      - source_labels: [__name__]
+        regex: "mongodb_mongod_wiredtiger_transaction.*|mongodb_mongod_wiredtiger_concurrent.*"
+        action: drop
+
+      # -- DROP: Go runtime and process metrics exposed by the Atlas agent
+      - source_labels: [__name__]
+        regex: "go_.*|process_.*"
+        action: drop
+
+      # -- KEEP: Only the metrics relevant to SLOs and operational dashboards
+      # Comment this block out if you want to retain all remaining metrics
+      - source_labels: [__name__]
+        regex: |
+          mongodb_ss_opcounters.*|
+          mongodb_ss_connections.*|
+          mongodb_ss_mem.*|
+          mongodb_ss_globalLock.*|
+          mongodb_ss_repl.*|
+          mongodb_mongod_repl_lag|
+          mongodb_mongod_locks.*|
+          mongodb_mongod_op_latencies.*|
+          mongodb_mongod_wiredtiger_cache_bytes.*|
+          mongodb_up
+        action: keep
+
+      # -- LABELDROP: Remove process_port to avoid unnecessary cardinality
+      # Only drop if you don't need port-level granularity across replica set members
+      - regex: "process_port"
+        action: labeldrop
+
+      # -- LABELDROP: Remove raw node IDs if you only care about cluster-level aggregation
+      # Comment out if you need per-node debugging capability
+      # - regex: "node_id"
+      #   action: labeldrop
+
+  # ---------------------------------------------------------------------------
+  # MongoDB Atlas Federation Endpoint -- Staging Clusters (leaner config)
+  # ---------------------------------------------------------------------------
+  - job_name: "mongodb_atlas_staging"
+
+    scheme: https
+    metrics_path: /prometheus/v1/groups/675b10a0c58ca56ec9052775/metrics  # Replace
+
+    basic_auth:
+      username: "prom_udemo"
+      password: "prom_up4ss"
+
+    static_configs:
+      - targets:
+          - "cloud.mongodb.com"
+        labels:
+          environment: "staging"
+          cloud_provider: "atlas"
+          cluster_tier: "M10"
+
+    relabel_configs:
+      - target_label: team
+        replacement: "platform-engineering"
+      - target_label: region
+        replacement: "us-east-1"
+
+    metric_relabel_configs:
+      # Staging: aggressive dropping -- keep only connection and opcount signals
+      - source_labels: [__name__]
+        regex: "mongodb_ss_opcounters.*|mongodb_ss_connections.*|mongodb_up"
+        action: keep
+
+      - regex: "process_port"
+        action: labeldrop

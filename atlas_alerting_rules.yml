@@ -1,0 +1,81 @@
+# =============================================================================
+# Atlas Alerting Rules
+# Covers the four key SLO signals: connections, replication lag, latency, uptime
+# =============================================================================
+
+groups:
+
+  - name: atlas_uptime
+    rules:
+
+      - alert: AtlasClusterDown
+        expr: mongodb_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas cluster unreachable"
+          description: "Cluster {{ $labels.cl_id }} in {{ $labels.environment }} is not responding to Prometheus scrapes."
+
+  - name: atlas_connections
+    rules:
+
+      - alert: AtlasHighConnectionUtilization
+        expr: cluster:mongodb_ss_connections_utilization:ratio > 0.80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas connection utilization above 80%"
+          description: "Cluster {{ $labels.cl_id }} is using {{ $value | humanizePercentage }} of available connections."
+
+      - alert: AtlasConnectionUtilizationCritical
+        expr: cluster:mongodb_ss_connections_utilization:ratio > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas connection utilization above 95%"
+          description: "Cluster {{ $labels.cl_id }} is near connection limit. Immediate action required."
+
+  - name: atlas_replication
+    rules:
+
+      - alert: AtlasReplicationLagHigh
+        expr: rs:mongodb_mongod_repl_lag:max > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas replication lag above 10 seconds"
+          description: "Replica set {{ $labels.rs_nm }} in cluster {{ $labels.cl_id }} has lag of {{ $value }}s."
+
+      - alert: AtlasReplicationLagCritical
+        expr: rs:mongodb_mongod_repl_lag:max > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas replication lag above 60 seconds"
+          description: "Replica set {{ $labels.rs_nm }} replication is severely behind. Risk of data inconsistency."
+
+  - name: atlas_latency
+    rules:
+
+      - alert: AtlasReadLatencyHigh
+        expr: cluster:mongodb_mongod_op_latencies_reads:avg > 100000  # 100ms in microseconds
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas average read latency above 100ms"
+          description: "Cluster {{ $labels.cl_id }} read latency is {{ $value | humanizeDuration }}."
+
+      - alert: AtlasWriteLatencyHigh
+        expr: cluster:mongodb_mongod_op_latencies_writes:avg > 100000  # 100ms in microseconds
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas average write latency above 100ms"
+          description: "Cluster {{ $labels.cl_id }} write latency is {{ $value | humanizeDuration }}."

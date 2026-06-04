@@ -1,0 +1,61 @@
+global:
+  scrape_interval: 30s # <-- DEFAULT: All jobs scrape every 30 seconds
+  scrape_timeout: 30s
+  evaluation_interval: 1m
+rule_files:
+  - "alert.rules.yml"
+scrape_configs:
+# Recommended intervals  
+- job_name: "AlejandroMR-mongo-metrics"
+  scrape_interval: 60s   # Don't go below 60s for Atlas 
+  scrape_timeout: 30s    # Allow sufficient timeout 
+  metrics_path: /metrics
+  metric_relabel_configs:
+
+    # -- DROP: WiredTiger internal cache details (high volume, low alert value)
+    - source_labels: [__name__]
+      regex: "mongodb_mongod_wiredtiger_cache.*"
+      action: drop
+
+    # -- DROP: Low-level WiredTiger transaction and concurrency internals
+    - source_labels: [__name__]
+      regex: "mongodb_mongod_wiredtiger_transaction.*|mongodb_mongod_wiredtiger_concurrent.*"
+      action: drop
+
+    # -- DROP: Go runtime and process metrics exposed by the Atlas agent
+    - source_labels: [__name__]
+      regex: "go_.*|process_.*"
+      action: drop
+
+    # -- KEEP: Only the metrics relevant to SLOs and operational dashboards
+    # Comment this block out if you want to retain all remaining metrics
+    - source_labels: [__name__]
+      regex: |
+        mongodb_ss_opcounters.*|
+        mongodb_ss_connections.*|
+        mongodb_ss_mem.*|
+        mongodb_ss_globalLock.*|
+        mongodb_ss_repl.*|
+        mongodb_mongod_repl_lag|
+        mongodb_mongod_locks.*|
+        mongodb_mongod_op_latencies.*|
+        mongodb_mongod_wiredtiger_cache_bytes.*|
+        mongodb_up
+      action: keep
+
+  # Drop metrics you don't need  
+#   metric_relabel_configs:  
+      # KEEP only essential metrics (whitelist approach)  
+#     - source_labels: [__name__]  
+#       regex: '(mongodb_atlas_connections_current|mongodb_atlas_opcounters_total|mongodb_atlas_replication_lag_seconds|mongodb_atlas_disk_partition_utilization_percent|mongodb_atlas_memory_resident_megabytes|mongodb_atlas_query_targeting_scanned_objects_per_returned)'  
+#       action: keep  
+  scheme : https
+  basic_auth:
+    username: prom_udemo
+    password: prom_up4ss
+  http_sd_configs:
+    - url: https://cloud.mongodb.com/prometheus/v1.0/groups/675b10a0c58ca56ec9052775/discovery
+      refresh_interval: 2m
+      basic_auth:
+        username: prom_udemo
+        password: prom_up4ss

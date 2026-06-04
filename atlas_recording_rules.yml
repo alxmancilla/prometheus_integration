@@ -1,0 +1,71 @@
+# =============================================================================
+# Atlas Recording Rules
+# Pre-aggregate high-value metrics to reduce query cost and long-term storage
+# =============================================================================
+
+groups:
+
+  - name: atlas_opcounters
+    interval: 60s
+    rules:
+
+      # Per-job rate of all operations (inserts, queries, updates, deletes)
+      - record: job:mongodb_ss_opcounters:rate5m
+        expr: |
+          sum by (job, environment, cl_id, rs_nm, op) (
+            rate(mongodb_ss_opcounters[5m])
+          )
+
+      # Total operation rate per cluster -- useful for top-level dashboards
+      - record: cluster:mongodb_ss_opcounters_total:rate5m
+        expr: |
+          sum by (environment, cl_id) (
+            rate(mongodb_ss_opcounters[5m])
+          )
+
+  - name: atlas_connections
+    interval: 60s
+    rules:
+
+      # Current connections per cluster
+      - record: cluster:mongodb_ss_connections_current:max
+        expr: |
+          max by (environment, cl_id, rs_nm) (
+            mongodb_ss_connections{conn_type="current"}
+          )
+
+      # Connection utilization ratio (current / available)
+      - record: cluster:mongodb_ss_connections_utilization:ratio
+        expr: |
+          sum by (environment, cl_id) (mongodb_ss_connections{conn_type="current"})
+          /
+          sum by (environment, cl_id) (mongodb_ss_connections{conn_type="available"})
+
+  - name: atlas_replication
+    interval: 60s
+    rules:
+
+      # Max replication lag per replica set
+      - record: rs:mongodb_mongod_repl_lag:max
+        expr: |
+          max by (environment, cl_id, rs_nm) (
+            mongodb_mongod_repl_lag
+          )
+
+  - name: atlas_latency
+    interval: 60s
+    rules:
+
+      # Average read latency per cluster (microseconds)
+      - record: cluster:mongodb_mongod_op_latencies_reads:avg
+        expr: |
+          rate(mongodb_mongod_op_latencies{type="reads", quantile="latency"}[5m])
+          /
+          rate(mongodb_mongod_op_latencies{type="reads", quantile="ops"}[5m])
+
+      # Average write latency per cluster (microseconds)
+      - record: cluster:mongodb_mongod_op_latencies_writes:avg
+        expr: |
+          rate(mongodb_mongod_op_latencies{type="writes", quantile="latency"}[5m])
+          /
+          rate(mongodb_mongod_op_latencies{type="writes", quantile="ops"}[5m])
