@@ -1,79 +1,117 @@
-Create a new directory with a Prometheus configuration and a Dockerfile like this:
+# MongoDB Atlas — Prometheus & Grafana Integration
 
-FROM prom/prometheus
-ADD prometheus.yml /etc/prometheus/
+A reference setup for scraping MongoDB Atlas metrics with Prometheus and
+visualizing them with Grafana. The repository contains a minimal "getting
+started" configuration as well as a more opinionated production-style
+configuration with recording rules and SLO-based alerts.
 
-Now build and run it:
+## Prerequisites
+
+- An Atlas project with an **M10+** cluster (Prometheus integration is not
+  available on shared tiers).
+- The **Prometheus integration** enabled in Atlas, which produces:
+  - a basic-auth **username / password**, and
+  - the project's **group ID** (used in the discovery / metrics URL).
+  See: [Atlas → Monitor with Prometheus](https://www.mongodb.com/docs/atlas/tutorial/monitor-with-prometheus/).
+- Docker (for running Prometheus and Grafana locally).
+
+## Repository layout
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Builds a custom Prometheus image bundling `prometheus.yml` and `alert.rules.yml`. |
+| `prometheus.yml` | Minimal scrape config using Atlas HTTP service discovery (`http_sd_configs`). |
+| `alert.rules.yml` | Simple example alerts loaded by the Docker image. |
+| `prometheus-atlas.yml` | Advanced config: multiple environments, relabeling, Alertmanager wiring. |
+| `atlas_recording_rules.yml` | Pre-aggregated metrics (connections, opcounters, replication lag, latency). |
+| `atlas_alerting_rules.yml` | SLO-oriented alerts that reference the recording rules above. |
+
+> **Security:** the YAML files in this repo contain example basic-auth
+> credentials and a group ID for demo purposes. Replace them with your own
+> values and load secrets from environment variables, a secret manager, or a
+> mounted file before using this in any non-throwaway environment.
+
+## Quick start (minimal config)
+
+Build and run the bundled Prometheus image:
+
+```bash
 docker build -t my-prometheus .
 docker run -p 9090:9090 my-prometheus
+```
 
-A more advanced option is to render the configuration dynamically on start with some tooling or even have a daemon update it periodically.
+Then open the Prometheus UI at <http://localhost:9090/> (use your host IP
+instead of `localhost` if running Grafana in another container). Prometheus
+will use the credentials in `prometheus.yml` to authenticate against the
+Atlas discovery endpoint and start scraping each cluster node returned by
+service discovery.
 
-On your browser, go to Prometheus Dashboard through: http://localhost:9090/.   (use your local IP address instead)
+On the **Status → Targets** page you should see one target per Atlas node
+in the configured project.
 
-Prometheus will ask for your login information. This should be the username and password you generated before
+## Advanced config
 
-Once on Prometheus’ dashboard, validate if you are seeing Atlas clusters in your project:
+`prometheus-atlas.yml` is a richer, production-style template that:
 
+- Defines **separate jobs** for `production` and `staging` environments.
+- Uses **`relabel_configs`** to inject `team`, `region`, and
+  `cluster_tier` labels at scrape time.
+- Uses **`metric_relabel_configs`** to drop high-cardinality / low-value
+  series (WiredTiger internals, Go runtime, process metrics) and keep only
+  the metrics consumed by the recording and alerting rules.
+- Wires Prometheus to an **Alertmanager** at `alertmanager:9093`.
+- Loads `atlas_recording_rules.yml` and `atlas_alerting_rules.yml`.
 
-Setting Up Grafana. 
+To use it, point Prometheus at this file instead of the default
+`prometheus.yml`, update the placeholder group ID, credentials, team, and
+region values, and make the rule files available at the paths referenced in
+the `rule_files` block.
 
-https://prometheus.io/docs/visualization/grafana/
+## Recording and alerting rules
 
-This is a straightforward process as the bulk of work has been done above. So, once Grafana is installed, it will use your Prometheus instance as its data source. Again, we will only integrate Grafana with Prometheus, however, how to build Grafana graphs is not in the scope of this guide.
+`atlas_recording_rules.yml` pre-aggregates the metrics that dashboards and
+alerts query most often, for example:
 
-We will use Docker images as well.
+- `cluster:mongodb_ss_opcounters_total:rate5m` — total ops/sec per cluster
+- `cluster:mongodb_ss_connections_utilization:ratio` — current / available connections
+- `rs:mongodb_mongod_repl_lag:max` — max replication lag per replica set
+- `cluster:mongodb_mongod_op_latencies_reads:avg` and `…_writes:avg` — average read/write latency
 
-docker run -d --name=grafana -p 3000:3000 grafana/grafana-enterprise     ## recommended
+`atlas_alerting_rules.yml` builds on those and defines alerts grouped by
+SLO signal:
 
-docker run -d --name=grafana -p 3000:3000 grafana/grafana-enterprise:13.0.2-ubuntu
+- **Uptime:** `AtlasClusterDown` (`mongodb_up == 0`)
+- **Connections:** `AtlasHighConnectionUtilization` (>80%) and `AtlasConnectionUtilizationCritical` (>95%)
+- **Replication:** `AtlasReplicationLagHigh` (>10s) and `AtlasReplicationLagCritical` (>60s)
+- **Latency:** `AtlasReadLatencyHigh` / `AtlasWriteLatencyHigh` (avg > 100ms)
 
+`alert.rules.yml` is a simpler example set used by the Docker quick-start
+image and is independent of the SLO rules above.
 
-Go to http://localhost:3000
+## Setting up Grafana
 
-Initial username and password are admin/admin. (admin/4dm1n4dm1n)
+Run Grafana in Docker:
 
-Integrate Grafana with Prometheus: This is setting up Prometheus as a Data Source for Grafana
+```bash
+docker run -d --name=grafana -p 3000:3000 grafana/grafana-enterprise
+```
 
-Click on Settings → Configuration → Data sources
-Choose Prometheus (Usually default)
-Configure Prometheus Data Source. Here the important information you need:
+Open <http://localhost:3000> and log in with the default credentials
+(`admin` / `admin`). Then add Prometheus as a data source:
 
-URL: http://localhost:9090 (you can use local host, but it may be problematic, so use your local IP instead)
+1. **Connections → Data sources → Add data source → Prometheus**
+2. **URL:** `http://<host-ip>:9090` (avoid `localhost` if Grafana runs in
+   a separate container — it will resolve to the Grafana container itself).
+3. Leave **Access** as `Server (default)`.
+4. **Save & test**.
 
-Access: should remain Default
+Building dashboards is out of scope for this guide; see the
+[Grafana docs](https://prometheus.io/docs/visualization/grafana/) for
+panel and dashboard guidance.
 
+## References
 
-
-
-
-Essential Metrics to Monitor
-
-Focus on these key metric categories:
-
-# Connection metrics  
-mongodb_atlas_connections_current  
-mongodb_atlas_connections_available  
-  
-# Operation metrics  
-mongodb_atlas_opcounters_total{type="query|insert|update|delete"}  
-  
-# Replication lag  
-mongodb_atlas_replication_lag_seconds  
-  
-# Disk and memory  
-mongodb_atlas_disk_partition_utilization_percent  
-mongodb_atlas_memory_resident_megabytes  
-  
-# Query performance  
-mongodb_atlas_query_targeting_scanned_objects_per_returned  
-
-
-
-Set Up Meaningful Alerts
-
-- High Connection Utilization
-- Replication Lag High
-- Disk Space Low
-
-
+- [Atlas Prometheus integration](https://www.mongodb.com/docs/atlas/tutorial/monitor-with-prometheus/)
+- [Prometheus configuration reference](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)
+- [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)
+- [Prometheus alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
