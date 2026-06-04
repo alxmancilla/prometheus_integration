@@ -41,11 +41,11 @@ scrape_configs:
   - job_name: "mongodb_atlas_production"
 
     scheme: https
-    metrics_path: /prometheus/v1/groups/675b10a0c58ca56ec9052775/metrics  # Replace <GROUP_ID>
+    metrics_path: /prometheus/v1/groups/REPLACE_WITH_ATLAS_GROUP_ID/metrics
 
     basic_auth:
-      username: "prom_udemo"               # Replace
-      password: "prom_up4ss"               # Replace
+      username: "REPLACE_WITH_ATLAS_USERNAME"
+      password_file: /etc/prometheus/secrets/atlas_password
 
     static_configs:
       - targets:
@@ -119,11 +119,11 @@ scrape_configs:
   - job_name: "mongodb_atlas_staging"
 
     scheme: https
-    metrics_path: /prometheus/v1/groups/675b10a0c58ca56ec9052775/metrics  # Replace
+    metrics_path: /prometheus/v1/groups/REPLACE_WITH_ATLAS_GROUP_ID/metrics
 
     basic_auth:
-      username: "prom_udemo"
-      password: "prom_up4ss"
+      username: "REPLACE_WITH_ATLAS_USERNAME"
+      password_file: /etc/prometheus/secrets/atlas_password
 
     static_configs:
       - targets:

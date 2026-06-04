@@ -1,0 +1,14 @@
+# Minimal Alertmanager configuration.
+# Replace the "null" receiver with a real integration (Slack, PagerDuty,
+# email, webhook, ...) before relying on it in any environment.
+# See: https://prometheus.io/docs/alerting/latest/configuration/
+
+route:
+  receiver: "null"
+  group_by: ["alertname", "cl_id"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: "null"

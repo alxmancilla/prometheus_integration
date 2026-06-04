@@ -19,35 +19,72 @@ configuration with recording rules and SLO-based alerts.
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Builds a custom Prometheus image bundling `prometheus.yml` and `alert.rules.yml`. |
+| `docker-compose.yml` | Brings up Prometheus + Grafana (and optionally Alertmanager). Recommended entry point. |
+| `Dockerfile` | Builds a self-contained Prometheus image bundling `prometheus.yml` and `alert.rules.yml`. |
 | `prometheus.yml` | Minimal scrape config using Atlas HTTP service discovery (`http_sd_configs`). |
 | `alert.rules.yml` | Simple example alerts loaded by the Docker image. |
 | `prometheus-atlas.yml` | Advanced config: multiple environments, relabeling, Alertmanager wiring. |
 | `atlas_recording_rules.yml` | Pre-aggregated metrics (connections, opcounters, replication lag, latency). |
 | `atlas_alerting_rules.yml` | SLO-oriented alerts that reference the recording rules above. |
+| `alertmanager.yml` | Minimal Alertmanager config (null receiver). Replace before using. |
+| `grafana/provisioning/` | Grafana provisioning files; auto-loaded on startup. Registers Prometheus as the default data source. |
+| `secrets/` | Runtime secrets mounted into Prometheus. Only `*.example` files are committed. |
+| `.env.example` | Template for Grafana admin credentials (copy to `.env`). |
 
-> **Security:** the YAML files in this repo contain example basic-auth
-> credentials and a group ID for demo purposes. Replace them with your own
-> values and load secrets from environment variables, a secret manager, or a
-> mounted file before using this in any non-throwaway environment.
+## Configuration
 
-## Quick start (minimal config)
+The committed Prometheus configs reference three values that you must set
+yourself; none of them are stored in git:
 
-Build and run the bundled Prometheus image:
+| Placeholder | Where | How to set it |
+|-------------|-------|---------------|
+| `REPLACE_WITH_ATLAS_USERNAME` | `prometheus.yml`, `prometheus-atlas.yml` | Edit the file inline. |
+| `REPLACE_WITH_ATLAS_GROUP_ID` | `prometheus.yml`, `prometheus-atlas.yml` | Edit the file inline. Your Atlas project ID. |
+| Atlas password | `secrets/atlas_password` | Copy `secrets/atlas_password.example` to `secrets/atlas_password` and put the real password in it. The file is loaded via Prometheus `password_file:` and bind-mounted read-only into the container. |
+
+The Grafana admin user and password are read from `.env` (see
+`.env.example`). Both `.env` and `secrets/atlas_password` are `.gitignore`d.
+
+## Quick start (Docker Compose)
+
+```bash
+# 1. Secrets and env
+cp secrets/atlas_password.example secrets/atlas_password
+$EDITOR secrets/atlas_password                  # paste the Atlas password
+cp .env.example .env
+$EDITOR .env                                    # set Grafana admin password
+
+# 2. Atlas-specific placeholders
+$EDITOR prometheus.yml                          # set username + group ID
+
+# 3. Bring up the stack
+docker compose up -d                            # Prometheus + Grafana
+# or:
+docker compose --profile alerting up -d         # also start Alertmanager
+```
+
+Then:
+
+- Prometheus UI: <http://localhost:9090/> → **Status → Targets** should
+  show one target per Atlas node returned by service discovery.
+- Grafana: <http://localhost:3000/> (credentials from `.env`).
+- Alertmanager (if started): <http://localhost:9093/>.
+
+To use the advanced config instead of `prometheus.yml`, edit the
+`volumes:` block of the `prometheus` service in `docker-compose.yml` and
+swap in `prometheus-atlas.yml`.
+
+## Alternative: self-contained Docker image
+
+`Dockerfile` bakes `prometheus.yml` and `alert.rules.yml` into a single
+image. The Atlas password still needs to be mounted at runtime:
 
 ```bash
 docker build -t my-prometheus .
-docker run -p 9090:9090 my-prometheus
+docker run -p 9090:9090 \
+  -v "$(pwd)/secrets:/etc/prometheus/secrets:ro" \
+  my-prometheus
 ```
-
-Then open the Prometheus UI at <http://localhost:9090/> (use your host IP
-instead of `localhost` if running Grafana in another container). Prometheus
-will use the credentials in `prometheus.yml` to authenticate against the
-Atlas discovery endpoint and start scraping each cluster node returned by
-service discovery.
-
-On the **Status → Targets** page you should see one target per Atlas node
-in the configured project.
 
 ## Advanced config
 
@@ -90,24 +127,40 @@ image and is independent of the SLO rules above.
 
 ## Setting up Grafana
 
-Run Grafana in Docker:
+When started via `docker compose`, Grafana is reachable at
+<http://localhost:3000/> and the admin user/password are read from `.env`
+(`GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`).
+
+The Prometheus data source is **auto-provisioned** from
+`grafana/provisioning/datasources/prometheus.yml`, which is bind-mounted
+read-only into `/etc/grafana/provisioning/`. On first start Grafana
+registers it as the default data source pointing at `http://prometheus:9090`
+(the Compose service name). No manual UI steps are required — confirm it
+under **Connections → Data sources**.
+
+To run Grafana outside Compose, change the `url:` in the provisioning
+file to `http://<host-ip>:9090` (`localhost` resolves to the Grafana
+container itself).
+
+Building dashboards is out of scope for this guide; drop dashboard JSON
+files under `grafana/provisioning/dashboards/` and add a matching
+[dashboard provider](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards)
+if you want them auto-loaded.
+
+## Alertmanager (optional)
+
+The `alertmanager` service is gated behind the `alerting` Compose profile,
+so it only starts when explicitly requested:
 
 ```bash
-docker run -d --name=grafana -p 3000:3000 grafana/grafana-enterprise
+docker compose --profile alerting up -d
 ```
 
-Open <http://localhost:3000> and log in with the default credentials
-(`admin` / `admin`). Then add Prometheus as a data source:
-
-1. **Connections → Data sources → Add data source → Prometheus**
-2. **URL:** `http://<host-ip>:9090` (avoid `localhost` if Grafana runs in
-   a separate container — it will resolve to the Grafana container itself).
-3. Leave **Access** as `Server (default)`.
-4. **Save & test**.
-
-Building dashboards is out of scope for this guide; see the
-[Grafana docs](https://prometheus.io/docs/visualization/grafana/) for
-panel and dashboard guidance.
+It loads `alertmanager.yml`, which ships with a single **null receiver**
+that silently drops alerts — replace it with a real integration (Slack,
+PagerDuty, email, webhook, ...) before relying on it. Note that the
+advanced config (`prometheus-atlas.yml`) is already wired to send alerts
+to `alertmanager:9093`; the minimal `prometheus.yml` is not.
 
 ## References
 

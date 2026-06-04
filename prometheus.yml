@@ -51,11 +51,11 @@ scrape_configs:
 #       action: keep  
   scheme : https
   basic_auth:
-    username: prom_udemo
-    password: prom_up4ss
+    username: REPLACE_WITH_ATLAS_USERNAME
+    password_file: /etc/prometheus/secrets/atlas_password
   http_sd_configs:
-    - url: https://cloud.mongodb.com/prometheus/v1.0/groups/675b10a0c58ca56ec9052775/discovery
+    - url: https://cloud.mongodb.com/prometheus/v1.0/groups/REPLACE_WITH_ATLAS_GROUP_ID/discovery
       refresh_interval: 2m
       basic_auth:
-        username: prom_udemo
-        password: prom_up4ss
+        username: REPLACE_WITH_ATLAS_USERNAME
+        password_file: /etc/prometheus/secrets/atlas_password

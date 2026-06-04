@@ -1,0 +1,26 @@
+# Keep the Docker build context small and free of secrets.
+
+# Secrets and env
+secrets/*
+!secrets/*.example
+.env
+.env.*
+
+# Local data
+data/
+prometheus_data/
+grafana_data/
+alertmanager_data/
+
+# Repo / tooling
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+
+# Docs / OS noise
+README.md
+*.md
+.DS_Store
+Thumbs.db
