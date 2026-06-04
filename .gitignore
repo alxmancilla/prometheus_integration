@@ -1,0 +1,27 @@
+# --- Secrets -----------------------------------------------------------------
+# Real secret files live next to their .example counterparts.
+secrets/*
+!secrets/*.example
+!secrets/README.md
+!secrets/.gitkeep
+
+# Env files (Grafana admin creds, etc.)
+.env
+.env.*
+!.env.example
+
+# --- Local state -------------------------------------------------------------
+# Prometheus / Grafana / Alertmanager data directories if bind-mounted locally.
+data/
+prometheus_data/
+grafana_data/
+alertmanager_data/
+
+# --- OS / editor noise -------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
