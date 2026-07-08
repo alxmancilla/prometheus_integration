@@ -69,3 +69,21 @@ groups:
           rate(mongodb_mongod_op_latencies{type="writes", quantile="latency"}[5m])
           /
           rate(mongodb_mongod_op_latencies{type="writes", quantile="ops"}[5m])
+
+  - name: atlas_wiredtiger
+    interval: 60s
+    rules:
+
+      # Dirty cache ratio on the PRIMARY -- rising values precede checkpoint pressure.
+      - record: cluster:mongodb_ss_wt_cache_dirty:ratio
+        expr: |
+          max by (environment, cl_id, rs_nm) (
+            mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache
+          )
+          /
+          clamp_min(
+            max by (environment, cl_id, rs_nm) (
+              mongodb_ss_wt_cache_bytes_currently_in_the_cache
+            ),
+            1
+          )

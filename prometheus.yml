@@ -12,14 +12,15 @@ scrape_configs:
   metrics_path: /metrics
   metric_relabel_configs:
 
-    # -- DROP: WiredTiger internal cache details (high volume, low alert value)
+    # -- DROP: high-volume WiredTiger internals (pages, evictions, sessions).
+    # Cache byte/dirty metrics are kept below via the whitelist.
     - source_labels: [__name__]
-      regex: "mongodb_mongod_wiredtiger_cache.*"
+      regex: "mongodb_ss_wt_cache_(pages_.*|eviction_.*|internal_.*|leaf_.*|read_into_cache|written_from_cache)"
       action: drop
 
-    # -- DROP: Low-level WiredTiger transaction and concurrency internals
+    # -- DROP: low-level WiredTiger transaction and concurrency ticket internals
     - source_labels: [__name__]
-      regex: "mongodb_mongod_wiredtiger_transaction.*|mongodb_mongod_wiredtiger_concurrent.*"
+      regex: "mongodb_ss_wt_(txn|concurrentTransactions|session|log|reconciliation)_.*"
       action: drop
 
     # -- DROP: Go runtime and process metrics exposed by the Atlas agent
@@ -27,28 +28,24 @@ scrape_configs:
       regex: "go_.*|process_.*"
       action: drop
 
-    # -- KEEP: Only the metrics relevant to SLOs and operational dashboards
-    # Comment this block out if you want to retain all remaining metrics
+    # -- KEEP: metrics backing the recording and alerting rules.
+    # Host-level CPU/disk (mongodb_sys_*) is exposed via the Atlas Admin API
+    # measurements endpoint, not the Prometheus federation surface, so it is
+    # not listed here. Comment this block out to retain all remaining metrics.
     - source_labels: [__name__]
       regex: |
+        mongodb_up|
         mongodb_ss_opcounters.*|
         mongodb_ss_connections.*|
         mongodb_ss_mem.*|
         mongodb_ss_globalLock.*|
         mongodb_ss_repl.*|
-        mongodb_mongod_repl_lag|
-        mongodb_mongod_locks.*|
+        mongodb_ss_wt_cache_bytes.*|
+        mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache|
         mongodb_mongod_op_latencies.*|
-        mongodb_mongod_wiredtiger_cache_bytes.*|
-        mongodb_up
+        mongodb_mongod_locks.*|
+        mongodb_mongod_repl_lag
       action: keep
-
-  # Drop metrics you don't need  
-#   metric_relabel_configs:  
-      # KEEP only essential metrics (whitelist approach)  
-#     - source_labels: [__name__]  
-#       regex: '(mongodb_atlas_connections_current|mongodb_atlas_opcounters_total|mongodb_atlas_replication_lag_seconds|mongodb_atlas_disk_partition_utilization_percent|mongodb_atlas_memory_resident_megabytes|mongodb_atlas_query_targeting_scanned_objects_per_returned)'  
-#       action: keep  
   scheme : https
   basic_auth:
     username: REPLACE_WITH_ATLAS_USERNAME
