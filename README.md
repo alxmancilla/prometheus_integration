@@ -104,26 +104,113 @@ To use it, point Prometheus at this file instead of the default
 region values, and make the rule files available at the paths referenced in
 the `rule_files` block.
 
-## Recording and alerting rules
+## Signals, recording rules, and alerts
 
-`atlas_recording_rules.yml` pre-aggregates the metrics that dashboards and
-alerts query most often, for example:
+The scrape configs keep a curated set of metrics that map to the Atlas
+signals most operators care about. These form the raw input for the
+recording and alerting rules:
+
+| Signal | Source metrics |
+|--------|----------------|
+| Uptime | `mongodb_up` |
+| Connections | `mongodb_ss_connections` |
+| Operations rate | `mongodb_ss_opcounters` |
+| Read / write latency | `mongodb_mongod_op_latencies` |
+| Replication lag | `mongodb_mongod_repl_lag` |
+| WT cache pressure | `mongodb_ss_wt_cache_bytes*`, `mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache` |
+
+> **Not covered here:** host-level CPU, disk usage/IOPS, oplog window,
+> and query targeting are exposed via the Atlas Admin API
+> `/measurements` endpoint rather than the Prometheus federation
+> surface, so they are outside the scope of this integration.
+
+### Recording rules (`atlas_recording_rules.yml`)
+
+Pre-aggregated series that dashboards and alerts query directly:
 
 - `cluster:mongodb_ss_opcounters_total:rate5m` — total ops/sec per cluster
 - `cluster:mongodb_ss_connections_utilization:ratio` — current / available connections
 - `rs:mongodb_mongod_repl_lag:max` — max replication lag per replica set
-- `cluster:mongodb_mongod_op_latencies_reads:avg` and `…_writes:avg` — average read/write latency
+- `cluster:mongodb_mongod_op_latencies_reads:avg` / `…_writes:avg` — average read/write latency
+- `cluster:mongodb_ss_wt_cache_dirty:ratio` — dirty bytes / cache bytes
 
-`atlas_alerting_rules.yml` builds on those and defines alerts grouped by
-SLO signal:
+### Alerting rules (`atlas_alerting_rules.yml`)
 
-- **Uptime:** `AtlasClusterDown` (`mongodb_up == 0`)
-- **Connections:** `AtlasHighConnectionUtilization` (>80%) and `AtlasConnectionUtilizationCritical` (>95%)
-- **Replication:** `AtlasReplicationLagHigh` (>10s) and `AtlasReplicationLagCritical` (>60s)
-- **Latency:** `AtlasReadLatencyHigh` / `AtlasWriteLatencyHigh` (avg > 100ms)
+Grouped by signal, with warning + critical tiers where useful:
 
-`alert.rules.yml` is a simpler example set used by the Docker quick-start
-image and is independent of the SLO rules above.
+| Group | Alerts |
+|-------|--------|
+| Uptime | `AtlasClusterDown` (`mongodb_up == 0`, 2m) |
+| Connections | `AtlasHighConnectionUtilization` (>80%, 5m), `AtlasConnectionUtilizationCritical` (>90%, 5m) |
+| Replication lag | `AtlasReplicationLagHigh` (>10s, 5m), `AtlasReplicationLagCritical` (>60s, 2m) |
+| Latency | `AtlasReadLatencyHigh` / `…WriteLatencyHigh` (>100ms, 5m); `…Critical` variants (>250ms, 5m) |
+
+> **Thresholds are starting points.** The values above are drawn from
+> MongoDB Atlas best-practice guidance and are meant to be calibrated to
+> your workload, SLAs, and node roles before you enable notifications.
+> Some alerts are only meaningful on specific node types (e.g. dirty
+> cache on `PRIMARY`); the header of `atlas_alerting_rules.yml` shows
+> how to scope them with a `node_type` / `role` label matcher.
+
+`alert.rules.yml` is a smaller example set bundled with the Dockerfile
+quick-start image and is independent of the SLO rules above.
+
+## Verifying against a live cluster
+
+Once Prometheus is scraping a real Atlas project, use these checks to
+confirm the metrics assumed by the recording and alerting rules actually
+land. Run each query from the Prometheus UI (<http://localhost:9090/graph>)
+or via the HTTP API.
+
+1. **Target is up and authenticated**
+
+   ```promql
+   up{job=~"AlejandroMR-mongo-metrics|mongodb_atlas_.*"}
+   ```
+
+   Expect `1` per replica-set member. `0` means the scrape is failing —
+   check credentials, group ID, and the Prometheus target-error message.
+
+2. **Core signals are present** — each of these should return at least
+   one series:
+
+   ```promql
+   mongodb_up
+   mongodb_ss_opcounters
+   mongodb_ss_connections{conn_type="current"}
+   mongodb_ss_connections{conn_type="available"}
+   mongodb_mongod_repl_lag
+   mongodb_ss_wt_cache_bytes_currently_in_the_cache
+   mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache
+   ```
+
+3. **Latency label schema** — the recording rules assume
+   `type` ∈ {`reads`, `writes`} and `quantile` ∈ {`latency`, `ops`}:
+
+   ```promql
+   count by (type, quantile) (mongodb_mongod_op_latencies)
+   ```
+
+   If the labels differ on your exporter, adjust
+   `cluster:mongodb_mongod_op_latencies_reads:avg` and the write variant
+   in `atlas_recording_rules.yml` accordingly.
+
+4. **Recording rules are producing series**
+
+   ```promql
+   cluster:mongodb_ss_opcounters_total:rate5m
+   cluster:mongodb_ss_connections_utilization:ratio
+   rs:mongodb_mongod_repl_lag:max
+   cluster:mongodb_mongod_op_latencies_reads:avg
+   cluster:mongodb_ss_wt_cache_dirty:ratio
+   ```
+
+   An empty result usually means the underlying raw metric is missing or
+   labeled differently on your cluster — start with step 2 or 3.
+
+5. **Rule health** — <http://localhost:9090/rules> lists every group and
+   flags evaluation errors (bad label matchers, division-by-zero
+   protection, etc.) that don't show up in `promtool check rules`.
 
 ## Setting up Grafana
 
