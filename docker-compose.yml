@@ -4,7 +4,7 @@
 #   1. cp secrets/atlas_password.example secrets/atlas_password
 #      and edit it with your Atlas Prometheus password.
 #   2. Edit prometheus.yml (or prometheus-atlas.yml) and replace the
-#      REPLACE_WITH_ATLAS_USERNAME / REPLACE_WITH_ATLAS_GROUP_ID placeholders.
+#      Atlas username and group ID placeholders.
 #   3. cp .env.example .env and adjust Grafana admin credentials.
 #   4. docker compose up -d                       # Prometheus + Grafana
 #      docker compose --profile alerting up -d    # also start Alertmanager
@@ -27,7 +27,6 @@ services:
       # the first line and uncomment the prometheus-atlas.yml line below.
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       # - ./prometheus-atlas.yml:/etc/prometheus/prometheus.yml:ro
-      - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
       - ./atlas_recording_rules.yml:/etc/prometheus/rules/atlas_recording_rules.yml:ro
       - ./atlas_alerting_rules.yml:/etc/prometheus/rules/atlas_alerting_rules.yml:ro
       - ./secrets:/etc/prometheus/secrets:ro

@@ -1,89 +1,407 @@
 # =============================================================================
 # Atlas Recording Rules
-# Pre-aggregate high-value metrics to reduce query cost and long-term storage
+# Top-20 MongoDB Atlas monitoring signals for dashboards and alerts.
 # =============================================================================
 
 groups:
-
-  - name: atlas_opcounters
-    interval: 60s
-    rules:
-
-      # Per-job rate of all operations (inserts, queries, updates, deletes)
-      - record: job:mongodb_ss_opcounters:rate5m
-        expr: |
-          sum by (job, environment, cl_id, rs_nm, op) (
-            rate(mongodb_ss_opcounters[5m])
-          )
-
-      # Total operation rate per cluster -- useful for top-level dashboards
-      - record: cluster:mongodb_ss_opcounters_total:rate5m
-        expr: |
-          sum by (environment, cl_id) (
-            rate(mongodb_ss_opcounters[5m])
-          )
-
-  - name: atlas_connections
-    interval: 60s
-    rules:
-
-      # Current connections per cluster
-      - record: cluster:mongodb_ss_connections_current:max
-        expr: |
-          max by (environment, cl_id, rs_nm) (
-            mongodb_ss_connections{conn_type="current"}
-          )
-
-      # Connection utilization ratio (current / available)
-      - record: cluster:mongodb_ss_connections_utilization:ratio
-        expr: |
-          sum by (environment, cl_id) (mongodb_ss_connections{conn_type="current"})
-          /
-          sum by (environment, cl_id) (mongodb_ss_connections{conn_type="available"})
-
-  - name: atlas_replication
-    interval: 60s
-    rules:
-
-      # Max replication lag per replica set
-      - record: rs:mongodb_mongod_repl_lag:max
-        expr: |
-          max by (environment, cl_id, rs_nm) (
-            mongodb_mongod_repl_lag
-          )
 
   - name: atlas_latency
     interval: 60s
     rules:
 
-      # Average read latency per cluster (microseconds)
-      - record: cluster:mongodb_mongod_op_latencies_reads:avg
+      - record: node:mongodb_oplatencies_reads:avg_usec
         expr: |
-          rate(mongodb_mongod_op_latencies{type="reads", quantile="latency"}[5m])
-          /
-          rate(mongodb_mongod_op_latencies{type="reads", quantile="ops"}[5m])
-
-      # Average write latency per cluster (microseconds)
-      - record: cluster:mongodb_mongod_op_latencies_writes:avg
-        expr: |
-          rate(mongodb_mongod_op_latencies{type="writes", quantile="latency"}[5m])
-          /
-          rate(mongodb_mongod_op_latencies{type="writes", quantile="ops"}[5m])
-
-  - name: atlas_wiredtiger
-    interval: 60s
-    rules:
-
-      # Dirty cache ratio on the PRIMARY -- rising values precede checkpoint pressure.
-      - record: cluster:mongodb_ss_wt_cache_dirty:ratio
-        expr: |
-          max by (environment, cl_id, rs_nm) (
-            mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_opLatencies_reads_latency[5m])
           )
           /
           clamp_min(
-            max by (environment, cl_id, rs_nm) (
-              mongodb_ss_wt_cache_bytes_currently_in_the_cache
+            sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+              rate(mongodb_opLatencies_reads_ops[5m])
             ),
             1
+          )
+
+      - record: node:mongodb_oplatencies_writes:avg_usec
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_opLatencies_writes_latency[5m])
+          )
+          /
+          clamp_min(
+            sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+              rate(mongodb_opLatencies_writes_ops[5m])
+            ),
+            1
+          )
+
+      - record: node:mongodb_oplatencies_commands:avg_usec
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_opLatencies_commands_latency[5m])
+          )
+          /
+          clamp_min(
+            sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+              rate(mongodb_opLatencies_commands_ops[5m])
+            ),
+            1
+          )
+
+  - name: atlas_cpu_disk_memory
+    interval: 60s
+    rules:
+
+      - record: node:mongodb_system_cpu_normalized:percent
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_system_cpu_normalized_user
+            + mongodb_system_cpu_normalized_kernel
+            + mongodb_system_cpu_normalized_iowait
+          )
+
+      - record: node:mongodb_system_cpu_iowait:percent
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_system_cpu_normalized_iowait
+          )
+
+      - record: node:mongodb_process_cpu_normalized:percent
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_process_cpu_normalized_user
+            + mongodb_process_cpu_normalized_kernel
+          )
+
+      - record: node:mongodb_disk_iops_read:ops
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_iops_read
+          )
+
+      - record: node:mongodb_disk_iops_write:ops
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_iops_write
+          )
+
+      - record: node:mongodb_disk_latency_read:ms
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_latency_read
+          )
+
+      - record: node:mongodb_disk_latency_write:ms
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_latency_write
+          )
+
+      - record: node:mongodb_disk_space_used:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_space_used
+          )
+
+      - record: node:mongodb_disk_space_free:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name) (
+            mongodb_disk_partition_space_free
+          )
+
+      - record: node:mongodb_disk_space_used:ratio
+        expr: |
+          node:mongodb_disk_space_used:bytes
+          /
+          clamp_min(
+            node:mongodb_disk_space_used:bytes
+            + on (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, partition_name)
+              node:mongodb_disk_space_free:bytes,
+            1
+          )
+
+      - record: node:mongodb_system_memory_available:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_system_memory_available
+          )
+
+      - record: node:mongodb_system_memory_used:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_system_memory_used
+          )
+
+      - record: node:mongodb_system_memory_available:ratio
+        expr: |
+          node:mongodb_system_memory_available:bytes
+          /
+          clamp_min(
+            node:mongodb_system_memory_available:bytes
+            + on (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role)
+              node:mongodb_system_memory_used:bytes,
+            1
+          )
+
+      - record: node:mongodb_system_memory_available:baseline7d
+        expr: |
+          avg_over_time(node:mongodb_system_memory_available:ratio[7d])
+
+  - name: atlas_connections_cache
+    interval: 60s
+    rules:
+
+      - record: node:mongodb_connections_current:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_connections_current
+          )
+
+      - record: node:mongodb_connections_available:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_connections_available
+          )
+
+      - record: node:mongodb_connections_limit:count
+        expr: |
+          node:mongodb_connections_current:count
+          + on (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role)
+            node:mongodb_connections_available:count
+
+      - record: node:mongodb_connections_utilization:ratio
+        expr: |
+          node:mongodb_connections_current:count
+          /
+          clamp_min(node:mongodb_connections_limit:count, 1)
+
+      - record: node:mongodb_wiredtiger_cache_used:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_wiredTiger_cache_bytes_currently_in_the_cache
+          )
+
+      - record: node:mongodb_wiredtiger_cache_dirty:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_wiredTiger_cache_tracked_dirty_bytes_in_the_cache
+          )
+
+      - record: node:mongodb_wiredtiger_cache_max:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_wiredTiger_cache_maximum_bytes_configured
+          )
+
+      - record: node:mongodb_wiredtiger_cache_fill:ratio
+        expr: |
+          node:mongodb_wiredtiger_cache_used:bytes
+          /
+          clamp_min(node:mongodb_wiredtiger_cache_max:bytes, 1)
+
+      - record: node:mongodb_wiredtiger_cache_dirty_fill:ratio
+        expr: |
+          node:mongodb_wiredtiger_cache_dirty:bytes
+          /
+          clamp_min(node:mongodb_wiredtiger_cache_max:bytes, 1)
+
+  - name: atlas_query_workload
+    interval: 60s
+    rules:
+
+      - record: node:mongodb_opcounters:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role, op) (
+            label_replace(rate(mongodb_opcounters_insert[5m]), "op", "insert", "__name__", ".*")
+            or label_replace(rate(mongodb_opcounters_query[5m]), "op", "query", "__name__", ".*")
+            or label_replace(rate(mongodb_opcounters_update[5m]), "op", "update", "__name__", ".*")
+            or label_replace(rate(mongodb_opcounters_delete[5m]), "op", "delete", "__name__", ".*")
+            or label_replace(rate(mongodb_opcounters_command[5m]), "op", "command", "__name__", ".*")
+            or label_replace(rate(mongodb_opcounters_getmore[5m]), "op", "getmore", "__name__", ".*")
+          )
+
+      - record: cluster:mongodb_opcounters_total:rate5m
+        expr: |
+          sum by (job, environment, region, cl_id) (
+            node:mongodb_opcounters:rate5m
+          )
+
+      - record: node:mongodb_queryexecutor_scanned:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_metrics_queryExecutor_scanned[5m])
+          )
+
+      - record: node:mongodb_queryexecutor_scanned_objects:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_metrics_queryExecutor_scannedObjects[5m])
+          )
+
+      - record: node:mongodb_documents_returned:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_metrics_document_returned[5m])
+          )
+
+      - record: node:mongodb_query_targeting:ratio
+        expr: |
+          node:mongodb_queryexecutor_scanned_objects:rate5m
+          /
+          clamp_min(node:mongodb_documents_returned:rate5m, 1)
+
+      - record: namespace:mongodb_query_targeting:ratio
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, namespace, database, collection) (
+            mongodb_query_targeting_scanned_objects_per_returned
+            or QUERY_TARGETING_SCANNED_OBJECTS_PER_RETURNED
+          )
+
+      - record: namespace:mongodb_slow_queries:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, namespace, database, collection) (
+            rate(mongodb_namespace_slow_queries_total[5m])
+            or rate(atlas_namespace_slow_queries_total[5m])
+          )
+
+      - record: namespace:mongodb_p95_execution_time:ms
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, namespace, database, collection) (
+            mongodb_namespace_p95_execution_time_ms
+            or atlas_namespace_p95_execution_time_ms
+          )
+
+      - record: node:mongodb_scan_and_order:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_metrics_operation_scanAndOrder[5m])
+          )
+
+      - record: node:mongodb_sort_spill_to_disk:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_metrics_query_sort_spillToDisk[5m])
+          )
+
+      - record: node:mongodb_page_faults:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_extra_info_page_faults[5m])
+          )
+
+      - record: node:mongodb_global_lock_queue_readers:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_globalLock_currentQueue_readers
+          )
+
+      - record: node:mongodb_global_lock_queue_writers:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_globalLock_currentQueue_writers
+          )
+
+      - record: node:mongodb_global_lock_queue_total:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_globalLock_currentQueue_total
+          )
+
+  - name: atlas_replication_network_process
+    interval: 60s
+    rules:
+
+      - record: node:mongodb_oplog_latest:seconds
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_oplog_latestOptime
+          )
+
+      - record: node:mongodb_oplog_earliest:seconds
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_oplog_earliestOptime
+          )
+
+      - record: node:mongodb_oplog_window:seconds
+        expr: |
+          node:mongodb_oplog_latest:seconds - node:mongodb_oplog_earliest:seconds
+
+      - record: rs:mongodb_oplog_latest_primary:seconds
+        expr: |
+          max by (job, environment, region, cl_id, rs_nm) (
+            mongodb_oplog_latestOptime{role="PRIMARY"}
+          )
+
+      - record: node:mongodb_replication_lag:seconds
+        expr: |
+          rs:mongodb_oplog_latest_primary:seconds
+          - on (job, environment, region, cl_id, rs_nm) group_right
+            node:mongodb_oplog_latest:seconds{role="SECONDARY"}
+
+      - record: node:mongodb_replication_headroom:seconds
+        expr: |
+          node:mongodb_oplog_window:seconds{role="SECONDARY"}
+          - node:mongodb_replication_lag:seconds
+
+      - record: node:mongodb_oplog_churn:gbytes_per_hour
+        expr: |
+          mongodb_oplog_rate_gb_per_hour or mongodb_oplog_rateGbPerHour
+
+      - record: node:mongodb_network_bytes_in:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_network_bytesIn[5m])
+          )
+
+      - record: node:mongodb_network_bytes_out:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_network_bytesOut[5m])
+          )
+
+      - record: node:mongodb_network_requests:rate5m
+        expr: |
+          sum by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            rate(mongodb_network_numRequests[5m])
+          )
+
+      - record: node:mongodb_process_memory_resident:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_mem_resident
+          )
+
+      - record: node:mongodb_process_memory_virtual:bytes
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, rs_nm, instance, hostname, node_type, role) (
+            mongodb_mem_virtual
+          )
+
+      - record: rs:mongodb_repl_secondary_role_changes:changes15m
+        expr: |
+          sum by (job, environment, region, cl_id, rs_nm) (
+            changes(mongodb_repl_secondary[15m])
+          )
+
+  - name: atlas_performance_advisor
+    interval: 5m
+    rules:
+
+      - record: namespace:atlas_performance_advisor_index_recommendations:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, namespace, database, collection) (
+            atlas_performance_advisor_index_recommendations
+          )
+
+      - record: namespace:atlas_performance_advisor_unused_indexes:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, namespace, database, collection) (
+            atlas_performance_advisor_unused_indexes
+          )
+
+      - record: namespace:atlas_performance_advisor_redundant_indexes:count
+        expr: |
+          max by (job, environment, region, availability_zone, cl_id, namespace, database, collection) (
+            atlas_performance_advisor_redundant_indexes
           )
