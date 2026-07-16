@@ -3,48 +3,29 @@ global:
   scrape_timeout: 30s
   evaluation_interval: 1m
 rule_files:
-  - "alert.rules.yml"
+  - "rules/atlas_recording_rules.yml"
+  - "rules/atlas_alerting_rules.yml"
 scrape_configs:
 # Recommended intervals  
 - job_name: "AlejandroMR-mongo-metrics"
   scrape_interval: 60s   # Don't go below 60s for Atlas 
   scrape_timeout: 30s    # Allow sufficient timeout 
   metrics_path: /metrics
+  relabel_configs:
+    - source_labels: [__address__]
+      target_label: hostname
   metric_relabel_configs:
-
-    # -- DROP: high-volume WiredTiger internals (pages, evictions, sessions).
-    # Cache byte/dirty metrics are kept below via the whitelist.
-    - source_labels: [__name__]
-      regex: "mongodb_ss_wt_cache_(pages_.*|eviction_.*|internal_.*|leaf_.*|read_into_cache|written_from_cache)"
-      action: drop
-
-    # -- DROP: low-level WiredTiger transaction and concurrency ticket internals
-    - source_labels: [__name__]
-      regex: "mongodb_ss_wt_(txn|concurrentTransactions|session|log|reconciliation)_.*"
-      action: drop
 
     # -- DROP: Go runtime and process metrics exposed by the Atlas agent
     - source_labels: [__name__]
-      regex: "go_.*|process_.*"
+      regex: "go_.*|promhttp_.*|process_.*"
       action: drop
 
-    # -- KEEP: metrics backing the recording and alerting rules.
-    # Host-level CPU/disk (mongodb_sys_*) is exposed via the Atlas Admin API
-    # measurements endpoint, not the Prometheus federation surface, so it is
-    # not listed here. Comment this block out to retain all remaining metrics.
+    # -- KEEP: Atlas/MongoDB metrics backing the top-20 recording and alerting
+    # rules. This intentionally keeps all mongodb_* series so the config works
+    # across Atlas metric-name revisions and customer-specific metric surfaces.
     - source_labels: [__name__]
-      regex: |
-        mongodb_up|
-        mongodb_ss_opcounters.*|
-        mongodb_ss_connections.*|
-        mongodb_ss_mem.*|
-        mongodb_ss_globalLock.*|
-        mongodb_ss_repl.*|
-        mongodb_ss_wt_cache_bytes.*|
-        mongodb_ss_wt_cache_tracked_dirty_bytes_in_the_cache|
-        mongodb_mongod_op_latencies.*|
-        mongodb_mongod_locks.*|
-        mongodb_mongod_repl_lag
+      regex: "mongodb_.*|atlas_.*|hardware_.*|QUERY_TARGETING_.*"
       action: keep
   scheme : https
   basic_auth:

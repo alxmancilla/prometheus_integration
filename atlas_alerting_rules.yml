@@ -1,121 +1,262 @@
 # =============================================================================
 # Atlas Alerting Rules
-#
-# Covers the signals reliably exposed by the Atlas Prometheus federation
-# endpoint:
-#   1. Cluster Uptime            (scrape reachability)
-#   2. Connections % of Limit    (connection exhaustion)
-#   3. Replication Lag           (secondary staleness)
-#   4. Read / Write Latency      (SLA signal)
-#
-# Thresholds below are recommended STARTING POINTS from MongoDB Atlas best
-# practices. Calibrate them to your workload, SLAs, and node roles before
-# enabling in production.
-#
-# Node-role scoping:
-#   Atlas metrics are typically labeled with node_type (ELECTABLE, READ_ONLY,
-#   ANALYTICS) and role (PRIMARY, SECONDARY). Where an alert is only
-#   meaningful on a subset of nodes (e.g. dirty cache on PRIMARY), add a
-#   matching label selector to the expression, for example:
-#       mongodb_up{node_type="ELECTABLE"} == 0
-#   Analytics nodes generally warrant relaxed thresholds; consider
-#   duplicating the relevant alerts with looser bounds and a
-#   {node_type="ANALYTICS"} selector.
+# Recommended alerts for Atlas node, replica set, and query health.
 # =============================================================================
 
 groups:
 
-  - name: atlas_uptime
+  - name: atlas_top_5_query_targeting
     rules:
 
-      - alert: AtlasClusterDown
-        expr: mongodb_up == 0
-        for: 2m
+      - alert: AtlasQueryTargetingRatioHigh
+        expr: node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas query targeting ratio above 100"
+          description: "Node {{ $labels.instance }} is scanning more than 100 documents per returned document. Check indexes and query shapes."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasQueryTargetingRatioCritical
+        expr: node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 1000
+        for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Atlas cluster unreachable"
-          description: "Cluster {{ $labels.cl_id }} in {{ $labels.environment }} is not responding to Prometheus scrapes."
+          summary: "Atlas query targeting ratio above 1000"
+          description: "Node {{ $labels.instance }} is scanning more than 1000 documents per returned document. User-facing latency risk is high."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-  - name: atlas_connections
+  - name: atlas_top_5_latency
     rules:
 
-      - alert: AtlasHighConnectionUtilization
-        expr: cluster:mongodb_ss_connections_utilization:ratio > 0.80
+      - alert: AtlasReadLatencyHigh
+        expr: node:mongodb_oplatencies_reads:avg_usec{node_type="ELECTABLE"} > 100000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas read latency above 100ms"
+          description: "Node {{ $labels.instance }} average read latency is {{ $value }}us."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasReadLatencyCritical
+        expr: node:mongodb_oplatencies_reads:avg_usec{node_type="ELECTABLE"} > 250000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas read latency above 250ms"
+          description: "Node {{ $labels.instance }} average read latency is {{ $value }}us."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasWriteLatencyHigh
+        expr: node:mongodb_oplatencies_writes:avg_usec{node_type="ELECTABLE"} > 100000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas write latency above 100ms"
+          description: "Node {{ $labels.instance }} average write latency is {{ $value }}us."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasWriteLatencyCritical
+        expr: node:mongodb_oplatencies_writes:avg_usec{node_type="ELECTABLE"} > 250000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas write latency above 250ms"
+          description: "Node {{ $labels.instance }} average write latency is {{ $value }}us."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+  - name: atlas_top_5_disk_connections_oplog
+    rules:
+
+      - alert: AtlasDiskUsageHigh
+        expr: node:mongodb_disk_space_used:ratio > 0.75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas disk usage above 75%"
+          description: "Node {{ $labels.instance }} partition {{ $labels.partition_name }} is {{ $value | humanizePercentage }} full."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasDiskUsageCritical
+        expr: node:mongodb_disk_space_used:ratio > 0.90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas disk usage above 90%"
+          description: "Node {{ $labels.instance }} partition {{ $labels.partition_name }} is near full. Atlas can block writes when disk is full."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasOplogWindowLow
+        expr: node:mongodb_oplog_window:seconds{role="SECONDARY"} < 86400
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas oplog window below 24h"
+          description: "Secondary {{ $labels.instance }} has only {{ $value | humanizeDuration }} of oplog window."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasOplogWindowCritical
+        expr: node:mongodb_oplog_window:seconds{role="SECONDARY"} < 3600
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas oplog window below 1h"
+          description: "Secondary {{ $labels.instance }} has only {{ $value | humanizeDuration }} of oplog window. Resync risk is high."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasConnectionUtilizationHigh
+        expr: node:mongodb_connections_utilization:ratio{node_type="ELECTABLE"} > 0.80
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Atlas connection utilization above 80%"
-          description: "Cluster {{ $labels.cl_id }} is using {{ $value | humanizePercentage }} of available connections."
+          description: "Node {{ $labels.instance }} is using {{ $value | humanizePercentage }} of its connection limit."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasConnectionUtilizationCritical
-        expr: cluster:mongodb_ss_connections_utilization:ratio > 0.90
+        expr: node:mongodb_connections_utilization:ratio{node_type="ELECTABLE"} > 0.90
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Atlas connection utilization above 90%"
-          description: "Cluster {{ $labels.cl_id }} is near connection limit. Immediate action required."
+          description: "Node {{ $labels.instance }} is near connection exhaustion."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-  - name: atlas_replication
+  - name: atlas_recommended_alerts
     rules:
 
-      - alert: AtlasReplicationLagHigh
-        expr: rs:mongodb_mongod_repl_lag:max > 10
+      - alert: AtlasReplicationHeadroomLow
+        expr: node:mongodb_replication_headroom:seconds < 43200
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Atlas replication lag above 10 seconds"
-          description: "Replica set {{ $labels.rs_nm }} in cluster {{ $labels.cl_id }} has lag of {{ $value }}s."
+          summary: "Atlas replication headroom below 12h"
+          description: "Secondary {{ $labels.instance }} has {{ $value | humanizeDuration }} of replication headroom."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-      - alert: AtlasReplicationLagCritical
-        expr: rs:mongodb_mongod_repl_lag:max > 60
-        for: 2m
+      - alert: AtlasReplicationHeadroomCritical
+        expr: node:mongodb_replication_headroom:seconds < 3600
+        for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Atlas replication lag above 60 seconds"
-          description: "Replica set {{ $labels.rs_nm }} replication is severely behind. Risk of data inconsistency."
+          summary: "Atlas replication headroom below 1h"
+          description: "Secondary {{ $labels.instance }} is close to falling off the oplog."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-  - name: atlas_latency
-    rules:
+      - alert: AtlasSystemMemoryAvailableLow
+        expr: node:mongodb_system_memory_available:ratio < 0.75 * node:mongodb_system_memory_available:baseline7d
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas available system memory below normal baseline"
+          description: "Node {{ $labels.instance }} available system memory is below 75% of its 7-day baseline."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-      - alert: AtlasReadLatencyHigh
-        expr: cluster:mongodb_mongod_op_latencies_reads:avg > 100000  # 100ms in microseconds
+      - alert: AtlasSystemMemoryAvailableCritical
+        expr: node:mongodb_system_memory_available:ratio < 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas available system memory below 5%"
+          description: "Node {{ $labels.instance }} is under severe memory pressure."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasPageFaultsHigh
+        expr: node:mongodb_page_faults:rate5m > 50
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Atlas average read latency above 100ms"
-          description: "Cluster {{ $labels.cl_id }} read latency is {{ $value | humanizeDuration }}."
+          summary: "Atlas page faults above 50/sec"
+          description: "Node {{ $labels.instance }} page fault rate is {{ $value }}/sec. Working set may not fit in memory."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-      - alert: AtlasReadLatencyCritical
-        expr: cluster:mongodb_mongod_op_latencies_reads:avg > 250000  # 250ms in microseconds
+      - alert: AtlasPageFaultsCritical
+        expr: node:mongodb_page_faults:rate5m > 100
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Atlas average read latency above 250ms"
-          description: "Cluster {{ $labels.cl_id }} read latency is {{ $value | humanizeDuration }}. SLA impact likely."
+          summary: "Atlas page faults above 100/sec"
+          description: "Node {{ $labels.instance }} is experiencing sustained page faults."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-      - alert: AtlasWriteLatencyHigh
-        expr: cluster:mongodb_mongod_op_latencies_writes:avg > 100000  # 100ms in microseconds
+      - alert: AtlasQueuedReadersOrWriters
+        expr: |
+          deriv(node:mongodb_global_lock_queue_total:count{node_type="ELECTABLE"}[5m]) > 0
+          and node:mongodb_global_lock_queue_total:count{node_type="ELECTABLE"} > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Atlas average write latency above 100ms"
-          description: "Cluster {{ $labels.cl_id }} write latency is {{ $value | humanizeDuration }}."
+          summary: "Atlas queued readers or writers detected"
+          description: "Node {{ $labels.instance }} has sustained queue growth."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
-      - alert: AtlasWriteLatencyCritical
-        expr: cluster:mongodb_mongod_op_latencies_writes:avg > 250000  # 250ms in microseconds
+      - alert: AtlasQueuedReadersOrWritersCritical
+        expr: |
+          node:mongodb_global_lock_queue_readers:count{node_type="ELECTABLE"} > 10
+          or node:mongodb_global_lock_queue_writers:count{node_type="ELECTABLE"} > 10
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Atlas average write latency above 250ms"
-          description: "Cluster {{ $labels.cl_id }} write latency is {{ $value | humanizeDuration }}. SLA impact likely."
+          summary: "Atlas queued readers or writers above 10"
+          description: "Node {{ $labels.instance }} is showing sustained overload."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      - alert: AtlasPrimaryElectionDetected
+        expr: rs:mongodb_repl_secondary_role_changes:changes15m > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas primary election or role change detected"
+          description: "Replica set {{ $labels.rs_nm }} had a role change in the last 15 minutes."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      - alert: AtlasFrequentPrimaryElections
+        expr: sum_over_time(rs:mongodb_repl_secondary_role_changes:changes15m[1h]) > 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas frequent primary elections detected"
+          description: "Replica set {{ $labels.rs_nm }} had multiple role changes in the last hour."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasCpuSaturationHigh
+        expr: node:mongodb_system_cpu_normalized:percent{node_type="ELECTABLE"} > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas normalized CPU above 80%"
+          description: "Node {{ $labels.instance }} normalized CPU is {{ $value }}%."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasCpuSaturationCritical
+        expr: node:mongodb_system_cpu_normalized:percent{node_type="ELECTABLE"} > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas normalized CPU above 90%"
+          description: "Node {{ $labels.instance }} CPU saturation is likely to affect latency."
+          context: "host={{ $labels.hostname }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} role={{ $labels.role }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
