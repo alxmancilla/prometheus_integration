@@ -27,6 +27,7 @@ configuration with top-20 recording rules and recommended Atlas alerts.
 | `atlas_alerting_rules.yml` | Recommended Atlas alerts that reference the recording rules above. |
 | `atlas_meta_alerting_rules.yml` | Monitoring-health alerts: scrape/SD failures, missing rule inputs, rule and notification failures, Watchdog heartbeat. |
 | `alertmanager.yml` | Severity routing + inhibition rules. Receivers are placeholders; wire them before using. |
+| `docs/runbooks.md` | Per-signal runbooks: meaning, investigation, mitigation. Linked from every alert's `runbook_url`. |
 | `tests/` | `promtool test rules` unit tests for the rule files. |
 | `.github/workflows/validate.yml` | CI: `promtool check config/rules`, rule unit tests, `amtool check-config`. |
 | `grafana/provisioning/` | Grafana provisioning files; auto-loaded on startup. Registers Prometheus as the default data source and loads the dashboards below. |
@@ -211,7 +212,7 @@ alerts are implemented with the requested starting thresholds:
 
 | Group | Alerts |
 |-------|--------|
-| Query targeting | `AtlasQueryTargetingRatioHigh` (>100, 5m), `AtlasQueryTargetingRatioCritical` (>1000, 5m) |
+| Query targeting | `AtlasQueryTargetingRatioHigh` (>100, 5m), `AtlasQueryTargetingRatioCritical` (>1000, 5m); both also require >1000 scanned docs/s |
 | Read/write latency | `AtlasReadLatencyHigh` / `AtlasWriteLatencyHigh` (>100ms, 5m), critical variants (>250ms, 5m) |
 | Disk usage | `AtlasDiskUsageHigh` (>75%, 5m), `AtlasDiskUsageCritical` (>90%, 5m) |
 | Oplog window | `AtlasOplogWindowLow` (<24h, 5m), `AtlasOplogWindowCritical` (<1h, 10m) |
@@ -235,6 +236,16 @@ thresholds because they are outside the primary application read/write path.
 The shipped alerts keep strict thresholds on `ELECTABLE` nodes; duplicate the
 same rules with `node_type="ANALYTICS"` and looser thresholds if analytics
 node alerting is required.
+
+Query-targeting alerts only fire while a node scans more than 1000
+documents/s. On idle nodes, small background collection scans divided by
+near-zero returned documents produce large but harmless ratios (observed:
+100–145 on a demo cluster returning <1 doc/s). Tune the floor in
+`atlas_alerting_rules.yml` to your workload.
+
+Every alert has a `runbook_url` annotation pointing to its section in
+[`docs/runbooks.md`](docs/runbooks.md). If you fork the repo, update the base
+URL in both rule files (and the expected annotations in `tests/`).
 
 Every node-level alert includes a `context` annotation with `cl_name`,
 `rs_nm`, `instance`, `node_type`, `rs_state`, `availability_zone`, and

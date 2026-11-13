@@ -23,6 +23,7 @@ groups:
           severity: warning
           signal: query_targeting
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#query-targeting"
           summary: "Atlas query targeting ratio above 100"
           description: "Node {{ $labels.instance }} is scanning more than 100 documents per returned document. Check indexes and query shapes."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -36,6 +37,7 @@ groups:
           severity: critical
           signal: query_targeting
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#query-targeting"
           summary: "Atlas query targeting ratio above 1000"
           description: "Node {{ $labels.instance }} is scanning more than 1000 documents per returned document. User-facing latency risk is high."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -50,6 +52,7 @@ groups:
           severity: warning
           signal: read_latency
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#read-latency--write-latency"
           summary: "Atlas read latency above 100ms"
           description: "Node {{ $labels.instance }} average read latency is {{ $value | humanize }}us."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -61,6 +64,7 @@ groups:
           severity: critical
           signal: read_latency
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#read-latency--write-latency"
           summary: "Atlas read latency above 250ms"
           description: "Node {{ $labels.instance }} average read latency is {{ $value | humanize }}us."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -72,6 +76,7 @@ groups:
           severity: warning
           signal: write_latency
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#read-latency--write-latency"
           summary: "Atlas write latency above 100ms"
           description: "Node {{ $labels.instance }} average write latency is {{ $value | humanize }}us."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -83,6 +88,7 @@ groups:
           severity: critical
           signal: write_latency
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#read-latency--write-latency"
           summary: "Atlas write latency above 250ms"
           description: "Node {{ $labels.instance }} average write latency is {{ $value | humanize }}us."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -97,6 +103,7 @@ groups:
           severity: warning
           signal: disk_usage
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
           summary: "Atlas disk usage above 75%"
           description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is {{ $value | humanizePercentage }} full."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -108,6 +115,7 @@ groups:
           severity: critical
           signal: disk_usage
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
           summary: "Atlas disk usage above 90%"
           description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is near full. Atlas can block writes when disk is full."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -119,6 +127,7 @@ groups:
           severity: warning
           signal: oplog_window
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#oplog-window"
           summary: "Atlas oplog window below 24h"
           description: "Secondary {{ $labels.instance }} has only {{ $value | humanizeDuration }} of oplog window."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -130,6 +139,7 @@ groups:
           severity: critical
           signal: oplog_window
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#oplog-window"
           summary: "Atlas oplog window below 1h"
           description: "Secondary {{ $labels.instance }} has only {{ $value | humanizeDuration }} of oplog window. Resync risk is high."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -141,6 +151,7 @@ groups:
           severity: warning
           signal: connections
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#connections"
           summary: "Atlas connection utilization above 80%"
           description: "Node {{ $labels.instance }} is using {{ $value | humanizePercentage }} of its connection limit."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -152,6 +163,7 @@ groups:
           severity: critical
           signal: connections
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#connections"
           summary: "Atlas connection utilization above 90%"
           description: "Node {{ $labels.instance }} is near connection exhaustion."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -166,6 +178,7 @@ groups:
           severity: warning
           signal: replication_headroom
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-headroom"
           summary: "Atlas replication headroom below 12h"
           description: "Secondary {{ $labels.instance }} has {{ $value | humanizeDuration }} of replication headroom."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -177,6 +190,7 @@ groups:
           severity: critical
           signal: replication_headroom
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-headroom"
           summary: "Atlas replication headroom below 1h"
           description: "Secondary {{ $labels.instance }} is close to falling off the oplog."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -188,6 +202,7 @@ groups:
           severity: warning
           signal: system_memory
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#system-memory"
           summary: "Atlas available system memory below normal baseline"
           description: "Node {{ $labels.instance }} available system memory is below 75% of its 7-day baseline."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -199,6 +214,7 @@ groups:
           severity: critical
           signal: system_memory
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#system-memory"
           summary: "Atlas available system memory below 5%"
           description: "Node {{ $labels.instance }} is under severe memory pressure."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -210,6 +226,7 @@ groups:
           severity: warning
           signal: page_faults
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#page-faults"
           summary: "Atlas page faults above 50/sec"
           description: "Node {{ $labels.instance }} page fault rate is {{ $value }}/sec. Working set may not fit in memory."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -221,6 +238,7 @@ groups:
           severity: critical
           signal: page_faults
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#page-faults"
           summary: "Atlas page faults above 100/sec"
           description: "Node {{ $labels.instance }} is experiencing sustained page faults."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -234,6 +252,7 @@ groups:
           severity: warning
           signal: lock_queue
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#lock-queue"
           summary: "Atlas queued readers or writers detected"
           description: "Node {{ $labels.instance }} has sustained queue growth."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -247,6 +266,7 @@ groups:
           severity: critical
           signal: lock_queue
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#lock-queue"
           summary: "Atlas queued readers or writers above 10"
           description: "Node {{ $labels.instance }} is showing sustained overload."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -258,6 +278,7 @@ groups:
           severity: warning
           signal: elections
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
           summary: "Atlas primary election or role change detected"
           description: "Replica set {{ $labels.rs_nm }} had a role change in the last 15 minutes."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -269,6 +290,7 @@ groups:
           severity: critical
           signal: elections
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
           summary: "Atlas frequent primary elections detected"
           description: "Replica set {{ $labels.rs_nm }} had multiple role changes in the last hour."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -280,6 +302,7 @@ groups:
           severity: warning
           signal: cpu
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu"
           summary: "Atlas normalized CPU above 80%"
           description: "Node {{ $labels.instance }} normalized CPU is {{ $value | humanize }}%."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
@@ -291,6 +314,7 @@ groups:
           severity: critical
           signal: cpu
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu"
           summary: "Atlas normalized CPU above 90%"
           description: "Node {{ $labels.instance }} CPU saturation is likely to affect latency."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"

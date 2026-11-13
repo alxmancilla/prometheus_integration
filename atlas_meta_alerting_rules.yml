@@ -17,6 +17,7 @@ groups:
         labels:
           severity: none
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#watchdog"
           summary: "Always-firing heartbeat alert"
           description: "Route this to an external dead man's switch. If it stops arriving, the alerting pipeline is broken."
 
@@ -26,6 +27,7 @@ groups:
         labels:
           severity: critical
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#scrape-target-down"
           summary: "Atlas scrape target down"
           description: "Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}). Check Atlas credentials, group ID, and IP access list. Atlas alerts for this node are blind."
 
@@ -35,6 +37,7 @@ groups:
         labels:
           severity: critical
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#scrape-targets-missing"
           summary: "No Atlas scrape targets discovered"
           description: "Atlas HTTP service discovery returned no targets. All Atlas alerts are blind."
 
@@ -44,6 +47,7 @@ groups:
         labels:
           severity: warning
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#service-discovery-failing"
           summary: "Atlas HTTP service discovery failing"
           description: "Discovery requests to Atlas are failing. Targets may be stale or missing."
 
@@ -60,6 +64,7 @@ groups:
         labels:
           severity: warning
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#core-metrics-missing"
           summary: "Atlas targets are up but core metrics are missing"
           description: "Scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
 
@@ -69,6 +74,7 @@ groups:
         labels:
           severity: warning
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#rule-evaluation-failures"
           summary: "Prometheus rule evaluation failures"
           description: "Rule group {{ $labels.rule_group }} is failing to evaluate. Check http://localhost:9090/rules."
 
@@ -78,6 +84,7 @@ groups:
         labels:
           severity: critical
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#notifications-failing"
           summary: "Prometheus cannot deliver alerts to Alertmanager"
           description: "Sending alerts to {{ $labels.alertmanager }} is failing."
 
@@ -87,6 +94,7 @@ groups:
         labels:
           severity: critical
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#notifications-failing"
           summary: "Alertmanager is down"
           description: "Alertmanager {{ $labels.instance }} cannot be scraped. Alerts are not being delivered."
 
@@ -96,5 +104,6 @@ groups:
         labels:
           severity: critical
         annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#notifications-failing"
           summary: "Alertmanager notifications failing"
           description: "Alertmanager failed to send notifications via {{ $labels.integration }}."
