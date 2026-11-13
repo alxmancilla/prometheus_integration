@@ -22,13 +22,14 @@ configuration with top-20 recording rules and recommended Atlas alerts.
 | `docker-compose.yml` | Brings up Prometheus + Grafana + Alertmanager (pinned versions, localhost-only ports). Recommended entry point. |
 | `Dockerfile` | Builds a self-contained Prometheus image bundling `prometheus.yml` and the Atlas rule files. |
 | `prometheus.yml` | Minimal scrape config using Atlas HTTP service discovery (`http_sd_configs`). Loads the top-20 recording and alerting rules. |
-| `prometheus-atlas.yml` | Advanced config: production/staging jobs, relabeling, Alertmanager wiring. |
+| `prometheus-atlas.yml` | Advanced config: production/staging jobs, relabeling, Alertmanager wiring, and org-wide jobs loaded from `scrape_configs/`. |
 | `atlas_recording_rules.yml` | Pre-aggregated top-20 metrics for latency, CPU, disk, connections, cache, query behavior, replication, memory, network, and process health. |
 | `atlas_alerting_rules.yml` | Recommended Atlas alerts that reference the recording rules above. |
 | `atlas_meta_alerting_rules.yml` | Monitoring-health alerts: scrape/SD failures, missing rule inputs, rule and notification failures, Watchdog heartbeat. |
 | `alertmanager.yml` | Severity routing + inhibition rules. Receivers are placeholders; wire them before using. |
 | `docs/runbooks.md` | Per-signal runbooks: meaning, investigation, mitigation. Linked from every alert's `runbook_url`. |
 | `scripts/atlas_org_sync.py` | Enables the Prometheus integration across every project in an org and generates per-project scrape jobs into `scrape_configs/`. See [Org-wide collection](#org-wide-collection-all-projects). |
+| `scrape_configs/` | Generated per-project scrape jobs (`*.yml`, not committed), mounted into Prometheus and loaded by `prometheus-atlas.yml`. |
 | `tests/` | `promtool test rules` unit tests for the rule files. |
 | `.github/workflows/validate.yml` | CI: `promtool check config/rules`, rule unit tests, `amtool check-config`. |
 | `grafana/provisioning/` | Grafana provisioning files; auto-loaded on startup. Registers Prometheus as the default data source and loads the dashboards below. |
@@ -49,9 +50,11 @@ none of them are stored in git:
 | `REPLACE_WITH_PROD_ATLAS_GROUP_ID` / `REPLACE_WITH_STAGING_ATLAS_GROUP_ID` | `prometheus-atlas.yml` | Edit the file inline. Use distinct Atlas project IDs when you enable both advanced jobs. |
 | Atlas password | `secrets/atlas_password` | Copy `secrets/atlas_password.example` to `secrets/atlas_password` and put the real password in it. The file is loaded via Prometheus `password_file:` and bind-mounted read-only into the container. |
 | Atlas passwords (advanced config) | `secrets/atlas_password_production`, `secrets/atlas_password_staging` | Same as above, one file per Atlas project. |
+| Shared org password (org-wide sync) | `secrets/atlas_password_org` | Copy `secrets/atlas_password_org.example`. `scripts/atlas_org_sync.py` sets this password on every project's integration. |
 
 The Grafana admin user and password are read from `.env` (see
-`.env.example`). Both `.env` and `secrets/atlas_password` are `.gitignore`d.
+`.env.example`). `.env`, the real files in `secrets/`, and the generated
+`scrape_configs/*.yml` are `.gitignore`d.
 
 ## Quick start (Docker Compose)
 
@@ -93,8 +96,8 @@ swap in `prometheus-atlas.yml`.
 
 ## Alternative: self-contained Docker image
 
-`Dockerfile` bakes `prometheus.yml`, `atlas_recording_rules.yml`, and
-`atlas_alerting_rules.yml` into a single image. The Atlas password still
+`Dockerfile` bakes `prometheus.yml` and the three Atlas rule files into a
+single image. The Atlas password still
 needs to be mounted at runtime:
 
 ```bash
@@ -113,17 +116,22 @@ docker run -p 9090:9090 \
 - Uses **`relabel_configs`** to inject `team` and `cluster_tier` labels at
   scrape time. Atlas already provides `region`, `provider`, `cl_name`, etc.,
   and (with **Send Resource Tags** on) your resource tags such as
-  `environment`, so those are not overridden. and to derive a `hostname` label from
-  the discovered target address.
+  `environment`, so those are not overridden. It also derives a `hostname`
+  label from the discovered target address.
 - Uses **`metric_relabel_configs`** to drop Go/client runtime noise and keep
   Atlas/MongoDB metric series consumed by the recording and alerting rules.
 - Wires Prometheus to an **Alertmanager** at `alertmanager:9093`.
-- Loads `atlas_recording_rules.yml` and `atlas_alerting_rules.yml`.
+- Loads `atlas_recording_rules.yml`, `atlas_alerting_rules.yml`, and
+  `atlas_meta_alerting_rules.yml`.
+- Loads any jobs in `scrape_configs/*.yml` through `scrape_config_files`
+  (see [Org-wide collection](#org-wide-collection-all-projects)).
 
 To use it, point Prometheus at this file instead of the default
 `prometheus.yml`, update the placeholder group IDs, credentials, and team
 values, and make the rule files available at the paths referenced in
-the `rule_files` block.
+the `rule_files` block. If you rely only on the org-wide sync, delete the
+`mongodb_atlas_production` / `mongodb_atlas_staging` jobs; left with
+placeholders, they fail and fire `AtlasScrapeTargetDown`.
 
 ## Org-wide collection (all projects)
 
@@ -143,6 +151,11 @@ service account (`ATLAS_CLIENT_ID` / `ATLAS_CLIENT_SECRET`) or an API key
 (`ATLAS_PUBLIC_KEY` / `ATLAS_PRIVATE_KEY`). The account needs **Organization
 Owner** to create integrations; **Organization Read Only** is enough for a
 dry run. Add the host running the script to the account's API access list.
+
+The generated jobs are loaded only by `prometheus-atlas.yml`, so switch the
+`prometheus` service in `docker-compose.yml` to that file first (the
+`scrape_configs/` mount is already in place). The self-contained `Dockerfile`
+image doesn't include them.
 
 ```bash
 cp secrets/atlas_password_org.example secrets/atlas_password_org
