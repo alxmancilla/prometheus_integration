@@ -7,11 +7,17 @@
 
 groups:
 
+  # The ratio is only meaningful under real load: on an idle node a small
+  # background scan divided by near-zero returned documents yields a large
+  # ratio. Both alerts therefore also require > 1000 scanned docs/s; tune
+  # this floor to your workload.
   - name: atlas_top_5_query_targeting
     rules:
 
       - alert: AtlasQueryTargetingRatioHigh
-        expr: node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 100
+        expr: |
+          node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 100
+          and node:mongodb_queryexecutor_scanned_objects:rate5m > 1000
         for: 5m
         labels:
           severity: warning
@@ -22,7 +28,9 @@ groups:
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasQueryTargetingRatioCritical
-        expr: node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 1000
+        expr: |
+          node:mongodb_query_targeting:ratio{node_type="ELECTABLE"} > 1000
+          and node:mongodb_queryexecutor_scanned_objects:rate5m > 1000
         for: 5m
         labels:
           severity: critical

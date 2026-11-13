@@ -217,3 +217,30 @@ tests:
         exp_samples:
           - labels: 'node:mongodb_replication_headroom:seconds{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
             value: 1400
+
+  # Query targeting: an idle node scanning ~120 docs/s while returning <1/s
+  # must not alert; the same ratio under real load must.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_metrics_queryExecutor_scannedObjects{job="atlas",instance="idle:27017",node_type="ELECTABLE"}'
+        values: '0+7200x15'
+      - series: 'mongodb_metrics_document_returned{job="atlas",instance="idle:27017",node_type="ELECTABLE"}'
+        values: '0+42x15'
+      - series: 'mongodb_metrics_queryExecutor_scannedObjects{job="atlas",instance="busy:27017",node_type="ELECTABLE"}'
+        values: '0+720000x15'
+      - series: 'mongodb_metrics_document_returned{job="atlas",instance="busy:27017",node_type="ELECTABLE"}'
+        values: '0+4200x15'
+    alert_rule_test:
+      - alertname: AtlasQueryTargetingRatioHigh
+        eval_time: 12m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: query_targeting
+              job: atlas
+              instance: "busy:27017"
+              node_type: ELECTABLE
+            exp_annotations:
+              summary: "Atlas query targeting ratio above 100"
+              description: "Node busy:27017 is scanning more than 100 documents per returned document. Check indexes and query shapes."
+              context: "cluster= rs= instance=busy:27017 node_type=ELECTABLE rs_state= az= region="
