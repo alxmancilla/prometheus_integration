@@ -32,16 +32,17 @@ route:
       mute_time_intervals: ["atlas-maintenance"]
 
 # Set this to the Atlas project's maintenance window (Project Settings ->
-# Maintenance Window). Atlas times are in the project's time zone; Alertmanager
-# uses UTC unless `location` is set.
+# Maintenance Window, or `atlas maintenanceWindows describe`). Atlas only
+# stores the start hour and maintenance can run for hours, so the interval
+# covers the start plus 5h. Uses the project's time zone.
 time_intervals:
   - name: atlas-maintenance
     time_intervals:
       - weekdays: ["saturday"]
         times:
-          - start_time: "02:00"
+          - start_time: "01:00"
             end_time: "06:00"
-        location: "UTC"
+        location: "America/Chicago"
 
 inhibit_rules:
   # A critical alert suppresses the warning for the same signal on the same

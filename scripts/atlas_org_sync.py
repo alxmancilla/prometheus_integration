@@ -94,7 +94,11 @@ class AtlasClient:
                 if e.code in (429, 500, 502, 503, 504) and attempt < 4:
                     time.sleep(int(e.headers.get("Retry-After") or 2 ** (attempt + 1)))
                     continue
-                detail = e.read().decode(errors="replace")
+                detail = getattr(e, "reason", "")
+                try:
+                    detail = e.read().decode(errors="replace") or detail
+                except Exception:
+                    pass  # some urllib errors (e.g. failed digest auth) carry no body
                 raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {detail}") from None
         raise RuntimeError(f"{method} {path}: retries exhausted")
 
@@ -253,7 +257,11 @@ def main():
         sys.exit(f"{args.password_file} is empty")
 
     client = AtlasClient()
-    projects = list(client.paginate(f"/orgs/{args.org_id}/groups"))
+    try:
+        projects = list(client.paginate(f"/orgs/{args.org_id}/groups"))
+    except RuntimeError as e:
+        sys.exit(f"Cannot list projects in org {args.org_id}: {e}\n"
+                 "Check the API key or service account, its org role, and its API access list.")
     if args.include:
         projects = [p for p in projects if re.search(args.include, p["name"])]
     if args.exclude:
