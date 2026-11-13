@@ -29,7 +29,8 @@ configuration with top-20 recording rules and recommended Atlas alerts.
 | `alertmanager.yml` | Severity routing + inhibition rules. Receivers are placeholders; wire them before using. |
 | `tests/` | `promtool test rules` unit tests for the rule files. |
 | `.github/workflows/validate.yml` | CI: `promtool check config/rules`, rule unit tests, `amtool check-config`. |
-| `grafana/provisioning/` | Grafana provisioning files; auto-loaded on startup. Registers Prometheus as the default data source. |
+| `grafana/provisioning/` | Grafana provisioning files; auto-loaded on startup. Registers Prometheus as the default data source and loads the dashboards below. |
+| `grafana/dashboards/` | MongoDB's official sample Atlas dashboards (Mongo Metrics, Hardware Metrics), bound to the provisioned data source. |
 | `secrets/` | Runtime secrets mounted into Prometheus. Only `*.example` files are committed. |
 | `.env.example` | Template for Grafana admin credentials (copy to `.env`). |
 
@@ -107,9 +108,10 @@ docker run -p 9090:9090 \
 
 - Defines **separate jobs** for `production` and `staging` environments.
 - Uses Atlas **HTTP service discovery** for each environment.
-- Uses **`relabel_configs`** to inject `team`, `environment`, and
-  `cluster_tier` labels at scrape time (Atlas already provides `region`,
-  `provider`, `cl_name`, etc., so those are not overridden) and to derive a `hostname` label from
+- Uses **`relabel_configs`** to inject `team` and `cluster_tier` labels at
+  scrape time. Atlas already provides `region`, `provider`, `cl_name`, etc.,
+  and (with **Send Resource Tags** on) your resource tags such as
+  `environment`, so those are not overridden. and to derive a `hostname` label from
   the discovered target address.
 - Uses **`metric_relabel_configs`** to drop Go/client runtime noise and keep
   Atlas/MongoDB metric series consumed by the recording and alerting rules.
@@ -415,10 +417,22 @@ To run Grafana outside Compose, change the `url:` in the provisioning
 file to `http://<host-ip>:9090` (`localhost` resolves to the Grafana
 container itself).
 
-Building dashboards is out of scope for this guide; drop dashboard JSON
-files under `grafana/provisioning/dashboards/` and add a matching
-[dashboard provider](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards)
-if you want them auto-loaded.
+### Dashboards
+
+Two dashboards are provisioned into the **MongoDB Atlas** folder on startup:
+
+- **Dedicated Atlas Clusters - Mongo Metrics**: opcounters, latency,
+  connections, cache, replication, query targeting, and more.
+- **Dedicated Atlas Clusters - Hardware Metrics**: CPU, memory, disk, and
+  network from the `hardware_*` series.
+
+They are MongoDB's sample dashboards from the
+[Atlas Prometheus integration docs](https://www.mongodb.com/docs/atlas/tutorial/prometheus-integration/#import-a-sample-grafana-dashboard),
+with the import-time data source input replaced by the provisioned
+`prometheus` data source. Add more by dropping JSON files into
+`grafana/dashboards/`; Grafana picks them up within a minute. UI edits are
+allowed but are not written back to the files, so export and commit changes
+you want to keep.
 
 ## Alertmanager
 

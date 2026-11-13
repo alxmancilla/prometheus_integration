@@ -64,9 +64,12 @@ scrape_configs:
           password_file: /etc/prometheus/secrets/atlas_password_production
 
     # --- Target Relabeling (before scrape) ---
-    # Enrich all metrics with team/environment context at scrape time.
+    # Enrich all metrics with team context at scrape time.
     # Do not set `region`, `provider`, `cl_name`, etc. here: Atlas already
     # exposes them, and a target label would overwrite the real values.
+    # The same applies to `environment` when it is an Atlas resource tag
+    # (Send Resource Tags = On); the rules group by it. Uncomment the
+    # `environment` rule only if your project does not send that tag.
     relabel_configs:
       - target_label: team
         replacement: "platform-engineering"                 # Replace with your team
@@ -74,8 +77,8 @@ scrape_configs:
       - source_labels: [__address__]
         target_label: hostname
 
-      - target_label: environment
-        replacement: "production"
+      # - target_label: environment
+      #   replacement: "production"
 
       - target_label: cluster_tier
         replacement: "M20"                                 # Replace with your tier
@@ -122,8 +125,8 @@ scrape_configs:
         replacement: "platform-engineering"
       - source_labels: [__address__]
         target_label: hostname
-      - target_label: environment
-        replacement: "staging"
+      # - target_label: environment
+      #   replacement: "staging"
       - target_label: cluster_tier
         replacement: "M10"
 
