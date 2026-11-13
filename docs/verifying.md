@@ -10,7 +10,7 @@ or via the HTTP API.
 1. **Target is up and authenticated**
 
    ```promql
-   up{job=~"mongodb_atlas_project|mongodb_atlas_.*"}
+   up{job=~"mongodb_atlas_.*"}
    ```
 
    Expect `1` per replica-set member. `0` means the scrape is failing —

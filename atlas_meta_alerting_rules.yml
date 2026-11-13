@@ -22,7 +22,7 @@ groups:
           description: "Route this to an external dead man's switch. If it stops arriving, the alerting pipeline is broken."
 
       - alert: AtlasScrapeTargetDown
-        expr: up{job=~"mongodb_atlas_project|mongodb_atlas_.*"} == 0
+        expr: up{job=~"mongodb_atlas_.*"} == 0
         for: 5m
         labels:
           severity: critical
@@ -32,7 +32,7 @@ groups:
           description: "Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}). Check Atlas credentials, group ID, and IP access list. Atlas alerts for this node are blind."
 
       - alert: AtlasScrapeTargetsMissing
-        expr: absent(up{job=~"mongodb_atlas_project|mongodb_atlas_.*"})
+        expr: absent(up{job=~"mongodb_atlas_.*"})
         for: 10m
         labels:
           severity: critical
@@ -59,7 +59,7 @@ groups:
             or absent(mongodb_oplog_latestOptime)
             or absent(hardware_disk_metrics_disk_space_used_bytes)
           )
-          and on () count(up{job=~"mongodb_atlas_project|mongodb_atlas_.*"} == 1) > 0
+          and on () count(up{job=~"mongodb_atlas_.*"} == 1) > 0
         for: 15m
         labels:
           severity: warning
