@@ -44,9 +44,12 @@ Notes:
 - Atlas never returns the integration password, so the script can't confirm it
   matches. After you change `secrets/atlas_password_org`, run with
   `--apply --overwrite` to push the new password to every project.
-- Projects without M10+ clusters have no targets, and Atlas may refuse to
-  create the integration for them. Those projects show up as errors, and the
-  script exits non-zero.
+- Projects without M10+ clusters are skipped (`skipped: no M10+ clusters`):
+  they have nothing to scrape, and Atlas may refuse the integration. The
+  check reads each project's clusters, which Organization Read Only allows.
+  Pass `--include-empty` to handle them anyway. Once a project gets an M10+
+  cluster, the next run picks it up.
 - The jobs match the `mongodb_atlas_.*` regex in `atlas_meta_alerting_rules.yml`,
-  so scrape failures are alerted on.
+  so scrape failures are alerted on, and `AtlasCoreMetricsMissing` is
+  evaluated per job, so one project with missing metrics is caught.
 

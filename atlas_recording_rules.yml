@@ -91,6 +91,22 @@ groups:
           /
           (10 * node:hardware_logical_cpus:count)
 
+      # Steal is CPU time the hypervisor gave to other tenants. On burstable
+      # tiers (M10/M20) it rises when CPU credits run out, even if mongod is
+      # not busy, so the saturation alerts exclude it and alert on it apart.
+      - record: node:mongodb_system_cpu_steal:percent
+        expr: |
+          max by (job, environment, region, availability_zone, group_id, cl_name, node_type, instance, hostname) (
+            rate(hardware_system_cpu_steal_milliseconds[5m])
+          )
+          /
+          (10 * node:hardware_logical_cpus:count)
+
+      - record: node:mongodb_system_cpu_busy_excl_steal:percent
+        expr: |
+          node:mongodb_system_cpu_normalized:percent
+          - (node:mongodb_system_cpu_steal:percent or node:mongodb_system_cpu_normalized:percent * 0)
+
       - record: node:mongodb_process_cpu_normalized:percent
         expr: |
           (

@@ -52,21 +52,23 @@ groups:
           description: "Discovery requests to Atlas are failing. Targets may be stale or missing."
 
       - alert: AtlasCoreMetricsMissing
+        # Per job (one job per project in org-wide mode), so a single project
+        # with missing inputs is caught even when the others are fine.
         expr: |
-          (
-            absent(mongodb_connections_current)
-            or absent(mongodb_opcounters_query)
-            or absent(mongodb_oplog_latestOptime)
-            or absent(hardware_disk_metrics_disk_space_used_bytes)
+          count by (job) (up{job=~"mongodb_atlas_.*"} == 1)
+          unless on (job) (
+            count by (job) (mongodb_connections_current)
+            and on (job) count by (job) (mongodb_opcounters_query)
+            and on (job) count by (job) (mongodb_oplog_latestOptime)
+            and on (job) count by (job) (hardware_disk_metrics_disk_space_used_bytes)
           )
-          and on () count(up{job=~"mongodb_atlas_.*"} == 1) > 0
         for: 15m
         labels:
           severity: warning
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#core-metrics-missing"
           summary: "Atlas targets are up but core metrics are missing"
-          description: "Scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
+          description: "Job {{ $labels.job }} scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
 
       - alert: PrometheusRuleEvaluationFailures
         expr: increase(prometheus_rule_evaluation_failures_total[5m]) > 0

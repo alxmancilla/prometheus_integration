@@ -110,6 +110,21 @@ class AtlasClient:
             page += 1
 
 
+def has_dedicated_cluster(client, gid):
+    """True if the project has at least one M10+ cluster (the only tiers the
+    Prometheus integration supports). Shared (M0/M2/M5) clusters report
+    providerName TENANT; Flex clusters are not listed by this API version."""
+    for cluster in client.paginate(f"/groups/{gid}/clusters"):
+        for spec in cluster.get("replicationSpecs", []):
+            for region in spec.get("regionConfigs", []):
+                if region.get("providerName") in ("TENANT", "FLEX", "SERVERLESS"):
+                    continue
+                size = (region.get("electableSpecs") or {}).get("instanceSize", "")
+                if size and size not in ("M0", "M2", "M5"):
+                    return True
+    return False
+
+
 def sync_project(client, project, username, password, apply, overwrite):
     """Returns (status, scrapeable) for one project."""
     gid = project["id"]
@@ -225,6 +240,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="create/update integrations in Atlas")
     ap.add_argument("--overwrite", action="store_true",
                     help="replace integrations configured with other credentials (rotates them!)")
+    ap.add_argument("--include-empty", action="store_true",
+                    help="also handle projects without M10+ clusters (skipped by default)")
     ap.add_argument("--reload-url", help="e.g. http://localhost:9090/-/reload, POSTed after writing")
     args = ap.parse_args()
 
@@ -246,7 +263,10 @@ def main():
     for p in sorted(projects, key=lambda p: p["name"]):
         username = args.username_template.format(group_id=p["id"])
         try:
-            status, ok = sync_project(client, p, username, password, args.apply, args.overwrite)
+            if not args.include_empty and not has_dedicated_cluster(client, p["id"]):
+                status, ok = "skipped: no M10+ clusters", False
+            else:
+                status, ok = sync_project(client, p, username, password, args.apply, args.overwrite)
         except RuntimeError as e:
             status, ok, failures = f"ERROR: {e}", False, failures + 1
         print(f"{p['name']:<40} {p['id']}  {status}")

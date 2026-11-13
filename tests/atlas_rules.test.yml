@@ -77,7 +77,7 @@ tests:
         eval_time: 15m
         exp_alerts:
           - exp_labels:
-              severity: warning
+              severity: info
               signal: elections
               job: atlas
               cl_name: c1
@@ -143,10 +143,11 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
+              job: mongodb_atlas_production
             exp_annotations:
               runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#core-metrics-missing"
               summary: "Atlas targets are up but core metrics are missing"
-              description: "Scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
+              description: "Job mongodb_atlas_production scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
 
   # No Atlas targets at all.
   - interval: 1m
@@ -164,13 +165,13 @@ tests:
               summary: "No Atlas scrape targets discovered"
               description: "Atlas HTTP service discovery returned no targets. All Atlas alerts are blind."
 
-  # Disk usage from Atlas hardware metrics: 95% used -> critical.
+  # Disk usage from Atlas hardware metrics: 96% used -> critical.
   - interval: 1m
     input_series:
       - series: 'hardware_disk_metrics_disk_space_used_bytes{job="atlas",cl_name="c1",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
-        values: '95x10'
+        values: '96x10'
       - series: 'hardware_disk_metrics_disk_space_free_bytes{job="atlas",cl_name="c1",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
-        values: '5x10'
+        values: '4x10'
     alert_rule_test:
       - alertname: AtlasDiskUsageCritical
         eval_time: 10m
@@ -185,8 +186,8 @@ tests:
               disk_name: data
             exp_annotations:
               runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
-              summary: "Atlas disk usage above 90%"
-              description: "Node n1:27017 disk data is near full. Atlas can block writes when disk is full."
+              summary: "Atlas disk usage above 95%"
+              description: "Node n1:27017 disk data is near full and storage auto-scaling has not caught up. Atlas can block writes when disk is full."
               context: "cluster=c1 rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="
 
   # Normalized CPU from hardware counters: (1200 + 600) ms/s over 2 CPUs = 90%.
@@ -354,4 +355,85 @@ tests:
               runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#execution-tickets"
               summary: "Atlas read execution tickets exhausted"
               description: "Node n1:27017 has had no read tickets available for 5m. New operations are queuing."
+              context: "cluster= rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="
+
+  # Org-wide: project A has all core inputs, project B has none. Only B alerts.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="mongodb_atlas_org_a",instance="a1:27017"}'
+        values: '1x20'
+      - series: 'up{job="mongodb_atlas_org_b",instance="b1:27017"}'
+        values: '1x20'
+      - series: 'mongodb_connections_current{job="mongodb_atlas_org_a",instance="a1:27017"}'
+        values: '1x20'
+      - series: 'mongodb_opcounters_query{job="mongodb_atlas_org_a",instance="a1:27017"}'
+        values: '1x20'
+      - series: 'mongodb_oplog_latestOptime{job="mongodb_atlas_org_a",instance="a1:27017"}'
+        values: '1x20'
+      - series: 'hardware_disk_metrics_disk_space_used_bytes{job="mongodb_atlas_org_a",instance="a1:27017"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: AtlasCoreMetricsMissing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: mongodb_atlas_org_b
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#core-metrics-missing"
+              summary: "Atlas targets are up but core metrics are missing"
+              description: "Job mongodb_atlas_org_b scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
+
+  # CPU: 60% busy plus 30% steal (M10 out of burst credits). Saturation
+  # ignores steal (60% < 80%); the steal alert fires.
+  - interval: 1m
+    input_series:
+      - series: 'hardware_platform_num_logical_cpus{job="atlas",instance="n1:27017",process_port="27017",node_type="ELECTABLE"}'
+        values: '2x20'
+      - series: 'hardware_system_cpu_user_milliseconds{job="atlas",instance="n1:27017",process_port="27017",node_type="ELECTABLE"}'
+        values: '0+72000x20'
+      - series: 'hardware_system_cpu_steal_milliseconds{job="atlas",instance="n1:27017",process_port="27017",node_type="ELECTABLE"}'
+        values: '0+36000x20'
+    alert_rule_test:
+      - alertname: AtlasCpuSaturationHigh
+        eval_time: 20m
+        exp_alerts: []
+      - alertname: AtlasCpuStealHigh
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: cpu_steal
+              job: atlas
+              instance: "n1:27017"
+              node_type: ELECTABLE
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu-steal"
+              summary: "Atlas CPU steal above 20%"
+              description: "Node n1:27017 loses 30% of its CPU to steal. On M10/M20 this means burst credits are used up."
+              context: "cluster= rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="
+
+  # Disk just over 50% used, free space dropping 1 byte/min: full in ~16h,
+  # well before the fixed thresholds trigger.
+  - interval: 1m
+    input_series:
+      - series: 'hardware_disk_metrics_disk_space_used_bytes{job="atlas",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
+        values: '1000+1x60'
+      - series: 'hardware_disk_metrics_disk_space_free_bytes{job="atlas",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
+        values: '1000-1x60'
+    alert_rule_test:
+      - alertname: AtlasDiskWillFillIn24h
+        eval_time: 50m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: disk_usage
+              job: atlas
+              instance: "n1:27017"
+              node_type: ELECTABLE
+              disk_name: data
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
+              summary: "Atlas disk projected to fill within 24h"
+              description: "Node n1:27017 disk data is growing fast enough to fill within 24 hours."
               context: "cluster= rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="

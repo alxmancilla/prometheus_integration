@@ -84,8 +84,7 @@ To switch to `prometheus-atlas.yml`, edit the `prometheus` service's
 `volumes:` in `docker-compose.yml`. Comment out the `prometheus.yml` line,
 uncomment the `prometheus-atlas.yml` line, then run `docker compose up -d`.
 
-`prometheus-atlas.yml` also adds `team` and `cluster_tier` labels, so set
-those values too. If you only use the org-wide sync, delete its
+`prometheus-atlas.yml` also adds a `team` label, so set that value too. If you only use the org-wide sync, delete its
 production and staging jobs. Left with placeholders, they fail and fire
 `AtlasScrapeTargetDown`.
 
@@ -115,7 +114,7 @@ There are three rule files:
 | File | What it does |
 |------|--------------|
 | `atlas_recording_rules.yml` | Precomputes the top-20 signals that alerts and dashboards use. |
-| `atlas_alerting_rules.yml` | Atlas alerts with warning and critical levels, for example disk >75% / >90% and read latency >100 ms / >250 ms. |
+| `atlas_alerting_rules.yml` | Atlas alerts with warning and critical levels, for example disk >75% / >95% and read latency >100 ms / >250 ms. |
 | `atlas_meta_alerting_rules.yml` | Alerts when monitoring breaks: failed scrapes, missing metrics, or alerts that can't be delivered. |
 
 Every alert links to its section in [`docs/runbooks.md`](docs/runbooks.md).

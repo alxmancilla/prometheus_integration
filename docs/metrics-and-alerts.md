@@ -93,7 +93,7 @@ alerts are implemented with the requested starting thresholds:
 |-------|--------|
 | Query targeting | `AtlasQueryTargetingRatioHigh` (>100, 5m), `AtlasQueryTargetingRatioCritical` (>1000, 5m); both also require >1000 scanned docs/s |
 | Read/write latency | `AtlasReadLatencyHigh` / `AtlasWriteLatencyHigh` (>100ms, 5m), critical variants (>250ms, 5m) |
-| Disk usage | `AtlasDiskUsageHigh` (>75%, 5m), `AtlasDiskUsageCritical` (>90%, 5m) |
+| Disk usage | `AtlasDiskUsageHigh` (>75%, 5m), `AtlasDiskUsageCritical` (>95%, 5m), `AtlasDiskWillFillIn24h` (6h trend full within 24h, 30m) |
 | Oplog window | `AtlasOplogWindowLow` (<24h, 5m), `AtlasOplogWindowCritical` (<1h, 10m) |
 | Connections | `AtlasConnectionUtilizationHigh` (>80%, 5m), `AtlasConnectionUtilizationCritical` (>90%, 5m) |
 | Replication lag | `AtlasReplicationLagHigh` (>60s, 5m), `AtlasReplicationLagCritical` (>5m, 5m) |
@@ -103,8 +103,9 @@ alerts are implemented with the requested starting thresholds:
 | System memory available | `AtlasSystemMemoryAvailableLow` (<75% of 7-day baseline, 10m), `AtlasSystemMemoryAvailableCritical` (<5%, 10m) |
 | Page faults | `AtlasPageFaultsHigh` (>50/s, 5m), `AtlasPageFaultsCritical` (>100/s, 5m) |
 | Queued readers/writers (pre-7.0) | `AtlasQueuedReadersOrWriters` (sustained queue growth, 5m), `AtlasQueuedReadersOrWritersCritical` (>10 queued readers or writers, 5m) |
-| Primary election | `AtlasPrimaryElectionDetected` (any election in 15m), `AtlasFrequentPrimaryElections` (>1 election in 1h) |
-| CPU saturation | `AtlasCpuSaturationHigh` (>80%, 5m), `AtlasCpuSaturationCritical` (>90%, 5m) |
+| Primary election | `AtlasPrimaryElectionDetected` (info, any election in 15m, muted in the maintenance window), `AtlasFrequentPrimaryElections` (>1 election in 1h) |
+| CPU saturation | `AtlasCpuSaturationHigh` (>80% excluding steal, 5m), `AtlasCpuSaturationCritical` (>90% excluding steal, 5m) |
+| CPU steal | `AtlasCpuStealHigh` (>20%, 15m); M10/M20 out of burst credits |
 
 > **Thresholds are starting points.** The values above are drawn from
 > MongoDB Atlas best-practice guidance and are meant to be calibrated to
@@ -195,7 +196,7 @@ alerts catch that:
 | `AtlasScrapeTargetDown` | An Atlas target fails to scrape for 5m (auth, group ID, access list). |
 | `AtlasScrapeTargetsMissing` | Service discovery returns no Atlas targets for 10m. |
 | `AtlasServiceDiscoveryFailing` | Atlas discovery requests keep failing. |
-| `AtlasCoreMetricsMissing` | Targets are up but core rule inputs are absent (metric-name / relabel mismatch). |
+| `AtlasCoreMetricsMissing` | A job's targets are up but its core rule inputs are absent (metric-name / relabel mismatch). Evaluated per job, so one broken project is caught. |
 | `PrometheusRuleEvaluationFailures` | Any rule group fails to evaluate. |
 | `PrometheusNotificationsFailing` / `AlertmanagerDown` / `AlertmanagerNotificationsFailing` | Alerts cannot be delivered. |
 

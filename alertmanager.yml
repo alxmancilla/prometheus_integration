@@ -25,6 +25,24 @@ route:
     - matchers: ['severity="warning"']
       receiver: "ticket"
 
+    # Single elections are expected during Atlas maintenance, so they are
+    # info-only and muted during the maintenance window.
+    - matchers: ['severity="info"']
+      receiver: "ticket"
+      mute_time_intervals: ["atlas-maintenance"]
+
+# Set this to the Atlas project's maintenance window (Project Settings ->
+# Maintenance Window). Atlas times are in the project's time zone; Alertmanager
+# uses UTC unless `location` is set.
+time_intervals:
+  - name: atlas-maintenance
+    time_intervals:
+      - weekdays: ["saturday"]
+        times:
+          - start_time: "02:00"
+            end_time: "06:00"
+        location: "UTC"
+
 inhibit_rules:
   # A critical alert suppresses the warning for the same signal on the same
   # target (e.g. AtlasDiskUsageCritical silences AtlasDiskUsageHigh), but not

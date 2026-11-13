@@ -108,16 +108,35 @@ groups:
           description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is {{ $value | humanizePercentage }} full."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      # Atlas storage auto-scaling acts at about 90% full, so critical sits
+      # above it: reaching 95% means auto-scaling is off or did not keep up.
       - alert: AtlasDiskUsageCritical
-        expr: node:mongodb_disk_space_used:ratio > 0.90
+        expr: node:mongodb_disk_space_used:ratio > 0.95
         for: 5m
         labels:
           severity: critical
           signal: disk_usage
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
-          summary: "Atlas disk usage above 90%"
-          description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is near full. Atlas can block writes when disk is full."
+          summary: "Atlas disk usage above 95%"
+          description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is near full and storage auto-scaling has not caught up. Atlas can block writes when disk is full."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      # Catches fast growth before the fixed thresholds: the 6h trend reaches
+      # a full disk within 24h. Ignored below 50% used to avoid noise from
+      # short bursts on mostly empty disks.
+      - alert: AtlasDiskWillFillIn24h
+        expr: |
+          predict_linear(node:mongodb_disk_space_free:bytes[6h], 86400) < 0
+          and node:mongodb_disk_space_used:ratio > 0.5
+        for: 30m
+        labels:
+          severity: warning
+          signal: disk_usage
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#disk-usage"
+          summary: "Atlas disk projected to fill within 24h"
+          description: "Node {{ $labels.instance }} disk {{ $labels.disk_name }} is growing fast enough to fill within 24 hours."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasOplogWindowLow
@@ -354,11 +373,14 @@ groups:
           description: "Node {{ $labels.instance }} has had no {{ $labels.op }} tickets available for 5m. New operations are queuing."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      # Info only: Atlas maintenance, scaling, and upgrades all cause one
+      # election. Alertmanager mutes it during the maintenance window;
+      # repeated elections still page via AtlasFrequentPrimaryElections.
       - alert: AtlasPrimaryElectionDetected
         expr: rs:mongodb_primary_elections:count15m > 0
         for: 0m
         labels:
-          severity: warning
+          severity: info
           signal: elections
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
@@ -378,8 +400,9 @@ groups:
           description: "Replica set {{ $labels.rs_nm }} elected a new primary more than once in the last hour."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      # Saturation excludes steal; see AtlasCpuStealHigh.
       - alert: AtlasCpuSaturationHigh
-        expr: node:mongodb_system_cpu_normalized:percent{node_type="ELECTABLE"} > 80
+        expr: node:mongodb_system_cpu_busy_excl_steal:percent{node_type="ELECTABLE"} > 80
         for: 5m
         labels:
           severity: warning
@@ -387,11 +410,11 @@ groups:
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu"
           summary: "Atlas normalized CPU above 80%"
-          description: "Node {{ $labels.instance }} normalized CPU is {{ $value | humanize }}%."
+          description: "Node {{ $labels.instance }} normalized CPU (excluding steal) is {{ $value | humanize }}%."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasCpuSaturationCritical
-        expr: node:mongodb_system_cpu_normalized:percent{node_type="ELECTABLE"} > 90
+        expr: node:mongodb_system_cpu_busy_excl_steal:percent{node_type="ELECTABLE"} > 90
         for: 5m
         labels:
           severity: critical
@@ -400,4 +423,16 @@ groups:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu"
           summary: "Atlas normalized CPU above 90%"
           description: "Node {{ $labels.instance }} CPU saturation is likely to affect latency."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasCpuStealHigh
+        expr: node:mongodb_system_cpu_steal:percent > 20
+        for: 15m
+        labels:
+          severity: warning
+          signal: cpu_steal
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#cpu-steal"
+          summary: "Atlas CPU steal above 20%"
+          description: "Node {{ $labels.instance }} loses {{ $value | humanize }}% of its CPU to steal. On M10/M20 this means burst credits are used up."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"

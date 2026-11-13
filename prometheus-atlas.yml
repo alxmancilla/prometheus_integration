@@ -78,6 +78,8 @@ scrape_configs:
     # The same applies to `environment` when it is an Atlas resource tag
     # (Send Resource Tags = On); the rules group by it. Uncomment the
     # `environment` rule only if your project does not send that tag.
+    # There is no cluster_tier label: a job covers every cluster in the
+    # project, and tiers differ per cluster (and change with auto-scaling).
     relabel_configs:
       - target_label: team
         replacement: "platform-engineering"                 # Replace with your team
@@ -87,9 +89,6 @@ scrape_configs:
 
       # - target_label: environment
       #   replacement: "production"
-
-      - target_label: cluster_tier
-        replacement: "M20"                                 # Replace with your tier
 
     # --- Metric Relabeling (after scrape, before storage) ---
     metric_relabel_configs:
@@ -135,9 +134,6 @@ scrape_configs:
         target_label: hostname
       # - target_label: environment
       #   replacement: "staging"
-      - target_label: cluster_tier
-        replacement: "M10"
-
     metric_relabel_configs:
       # Staging: keep the same top-20 inputs so dashboards and alerts work in
       # pre-production. Tighten this only after confirming which rules you use.
