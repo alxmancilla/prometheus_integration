@@ -1,0 +1,39 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  promtool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare rule and secret paths referenced by the configs
+        run: |
+          mkdir -p rules secrets
+          cp atlas_*_rules.yml rules/
+          echo dummy > secrets/atlas_password
+          echo dummy > secrets/atlas_password_production
+          echo dummy > secrets/atlas_password_staging
+          for f in prometheus.yml prometheus-atlas.yml; do
+            sed "s#/etc/prometheus/secrets#$PWD/secrets#" "$f" > "ci-$f"
+          done
+
+      - name: Check Prometheus configs and rules
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" --entrypoint promtool \
+            prom/prometheus:v3.16.0 check config ci-prometheus.yml ci-prometheus-atlas.yml
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" --entrypoint promtool \
+            prom/prometheus:v3.16.0 check rules atlas_recording_rules.yml atlas_alerting_rules.yml atlas_meta_alerting_rules.yml
+
+      - name: Unit-test rules
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" --entrypoint promtool \
+            prom/prometheus:v3.16.0 test rules tests/atlas_rules.test.yml
+
+      - name: Check Alertmanager config
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" --entrypoint amtool \
+            prom/alertmanager:v0.35.0 check-config alertmanager.yml

@@ -1,0 +1,219 @@
+# Unit tests for the Atlas rules. Run with:
+#   promtool test rules tests/*.test.yml
+
+rule_files:
+  - ../atlas_recording_rules.yml
+  - ../atlas_alerting_rules.yml
+  - ../atlas_meta_alerting_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+
+  # Average read latency of 150ms at 1 op/s -> warning, not critical.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_opLatencies_reads_latency{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0+9000000x20'
+      - series: 'mongodb_opLatencies_reads_ops{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0+60x20'
+    promql_expr_test:
+      - expr: node:mongodb_oplatencies_reads:avg_usec
+        eval_time: 10m
+        exp_samples:
+          - labels: 'node:mongodb_oplatencies_reads:avg_usec{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+            value: 150000
+    alert_rule_test:
+      - alertname: AtlasReadLatencyCritical
+        eval_time: 10m
+        exp_alerts: []
+
+  # Low traffic (0.1 op/s) must not dilute latency: 300ms per op stays 300ms.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_opLatencies_writes_latency{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0+1800000x20'
+      - series: 'mongodb_opLatencies_writes_ops{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0+6x20'
+    promql_expr_test:
+      - expr: node:mongodb_oplatencies_writes:avg_usec
+        eval_time: 10m
+        exp_samples:
+          - labels: 'node:mongodb_oplatencies_writes:avg_usec{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+            value: 300000
+
+  # Idle node: no ops means no latency sample (and no alert), not 0.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_opLatencies_reads_latency{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0x20'
+      - series: 'mongodb_opLatencies_reads_ops{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: node:mongodb_oplatencies_reads:avg_usec
+        eval_time: 10m
+        exp_samples: []
+
+  # A single election triggers the detection alert but not the frequent one.
+  - interval: 1m
+    input_series:
+      # Atlas flips the rs_state label on election, so the old series goes
+      # stale and a new one appears.
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="2"}'
+        values: '1x10 stale'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
+        values: '_x10 0x30'
+    alert_rule_test:
+      - alertname: AtlasFrequentPrimaryElections
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: AtlasPrimaryElectionDetected
+        eval_time: 15m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: elections
+              job: atlas
+              cl_name: c1
+              rs_nm: rs0
+            exp_annotations:
+              summary: "Atlas primary election or role change detected"
+              description: "Replica set rs0 had a role change in the last 15 minutes."
+              context: "cluster=c1 rs=rs0 instance= node_type= rs_state= az= region="
+
+  # Two elections within an hour trigger the frequent-elections alert.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="2"}'
+        values: '1x10 stale _x9 1x20'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
+        values: '_x10 0x9 stale'
+    alert_rule_test:
+      - alertname: AtlasFrequentPrimaryElections
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: elections
+              job: atlas
+              cl_name: c1
+              rs_nm: rs0
+            exp_annotations:
+              summary: "Atlas frequent primary elections detected"
+              description: "Replica set rs0 had multiple role changes in the last hour."
+              context: "cluster=c1 rs=rs0 instance= node_type= rs_state= az= region="
+
+  # Meta alerts: scrape failure and missing rule inputs.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="mongodb_atlas_production",instance="n1:27017"}'
+        values: '0x10'
+      - series: 'up{job="mongodb_atlas_production",instance="n2:27017"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: AtlasScrapeTargetDown
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: mongodb_atlas_production
+              instance: "n1:27017"
+            exp_annotations:
+              summary: "Atlas scrape target down"
+              description: "Prometheus cannot scrape n1:27017 (job mongodb_atlas_production). Check Atlas credentials, group ID, and IP access list. Atlas alerts for this node are blind."
+      - alertname: AtlasScrapeTargetsMissing
+        eval_time: 10m
+        exp_alerts: []
+      - alertname: AtlasCoreMetricsMissing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Atlas targets are up but core metrics are missing"
+              description: "Scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
+
+  # No Atlas targets at all.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus",instance="localhost:9090"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: AtlasScrapeTargetsMissing
+        eval_time: 15m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "No Atlas scrape targets discovered"
+              description: "Atlas HTTP service discovery returned no targets. All Atlas alerts are blind."
+
+  # Disk usage from Atlas hardware metrics: 95% used -> critical.
+  - interval: 1m
+    input_series:
+      - series: 'hardware_disk_metrics_disk_space_used_bytes{job="atlas",cl_name="c1",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
+        values: '95x10'
+      - series: 'hardware_disk_metrics_disk_space_free_bytes{job="atlas",cl_name="c1",instance="n1:27017",process_port="27017",node_type="ELECTABLE",disk_name="data"}'
+        values: '5x10'
+    alert_rule_test:
+      - alertname: AtlasDiskUsageCritical
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: disk_usage
+              job: atlas
+              cl_name: c1
+              instance: "n1:27017"
+              node_type: ELECTABLE
+              disk_name: data
+            exp_annotations:
+              summary: "Atlas disk usage above 90%"
+              description: "Node n1:27017 disk data is near full. Atlas can block writes when disk is full."
+              context: "cluster=c1 rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="
+
+  # Normalized CPU from hardware counters: (1200 + 600) ms/s over 2 CPUs = 90%.
+  # mongod and mongos on the same host (different process_port) must not
+  # double-count system CPU.
+  - interval: 1m
+    input_series:
+      - series: 'hardware_platform_num_logical_cpus{job="atlas",instance="n1:27017",process_port="27017"}'
+        values: '2x10'
+      - series: 'hardware_platform_num_logical_cpus{job="atlas",instance="n1:27017",process_port="27016"}'
+        values: '2x10'
+      - series: 'hardware_system_cpu_user_milliseconds{job="atlas",instance="n1:27017",process_port="27017"}'
+        values: '0+72000x10'
+      - series: 'hardware_system_cpu_user_milliseconds{job="atlas",instance="n1:27017",process_port="27016"}'
+        values: '0+72000x10'
+      - series: 'hardware_system_cpu_kernel_milliseconds{job="atlas",instance="n1:27017",process_port="27017"}'
+        values: '0+36000x10'
+      - series: 'hardware_system_cpu_idle_milliseconds{job="atlas",instance="n1:27017",process_port="27017"}'
+        values: '0+12000x10'
+    promql_expr_test:
+      - expr: node:mongodb_system_cpu_normalized:percent
+        eval_time: 10m
+        exp_samples:
+          - labels: 'node:mongodb_system_cpu_normalized:percent{job="atlas",instance="n1:27017"}'
+            value: 90
+
+  # Replication: secondary 100s behind the primary with a 1500s oplog window
+  # leaves 1400s of headroom.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_oplog_latestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
+        values: '1000+60x10'
+      - series: 'mongodb_oplog_latestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+        values: '900+60x10'
+      - series: 'mongodb_oplog_earliestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+        values: '0x10'
+    promql_expr_test:
+      - expr: node:mongodb_replication_lag:seconds
+        eval_time: 10m
+        exp_samples:
+          - labels: 'node:mongodb_replication_lag:seconds{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+            value: 100
+      - expr: node:mongodb_replication_headroom:seconds
+        eval_time: 10m
+        exp_samples:
+          - labels: 'node:mongodb_replication_headroom:seconds{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+            value: 1400

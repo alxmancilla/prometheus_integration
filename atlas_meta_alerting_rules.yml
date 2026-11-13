@@ -1,0 +1,100 @@
+# =============================================================================
+# Monitoring-health (meta) alerts
+# Catch the failure modes where the Atlas alerts silently stop working:
+# scrape/auth failures, empty service discovery, missing rule inputs, rule
+# evaluation errors, and alert delivery failures.
+#
+# Keep the job regex in sync with the Atlas job names in prometheus*.yml.
+# =============================================================================
+
+groups:
+
+  - name: atlas_monitoring_health
+    rules:
+
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Always-firing heartbeat alert"
+          description: "Route this to an external dead man's switch. If it stops arriving, the alerting pipeline is broken."
+
+      - alert: AtlasScrapeTargetDown
+        expr: up{job=~"mongodb_atlas_project|mongodb_atlas_.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Atlas scrape target down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}). Check Atlas credentials, group ID, and IP access list. Atlas alerts for this node are blind."
+
+      - alert: AtlasScrapeTargetsMissing
+        expr: absent(up{job=~"mongodb_atlas_project|mongodb_atlas_.*"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Atlas scrape targets discovered"
+          description: "Atlas HTTP service discovery returned no targets. All Atlas alerts are blind."
+
+      - alert: AtlasServiceDiscoveryFailing
+        expr: increase(prometheus_sd_http_failures_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas HTTP service discovery failing"
+          description: "Discovery requests to Atlas are failing. Targets may be stale or missing."
+
+      - alert: AtlasCoreMetricsMissing
+        expr: |
+          (
+            absent(mongodb_connections_current)
+            or absent(mongodb_opcounters_query)
+            or absent(mongodb_oplog_latestOptime)
+            or absent(hardware_disk_metrics_disk_space_used_bytes)
+          )
+          and on () count(up{job=~"mongodb_atlas_project|mongodb_atlas_.*"} == 1) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas targets are up but core metrics are missing"
+          description: "Scrapes succeed but inputs to the recording rules are absent. Metric names or relabel filters likely do not match this Atlas project; dependent alerts will never fire."
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus rule evaluation failures"
+          description: "Rule group {{ $labels.rule_group }} is failing to evaluate. Check http://localhost:9090/rules."
+
+      - alert: PrometheusNotificationsFailing
+        expr: increase(prometheus_notifications_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot deliver alerts to Alertmanager"
+          description: "Sending alerts to {{ $labels.alertmanager }} is failing."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager {{ $labels.instance }} cannot be scraped. Alerts are not being delivered."
+
+      - alert: AlertmanagerNotificationsFailing
+        expr: increase(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager notifications failing"
+          description: "Alertmanager failed to send notifications via {{ $labels.integration }}."

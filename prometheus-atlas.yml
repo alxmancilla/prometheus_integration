@@ -29,11 +29,20 @@ alerting:
 rule_files:
   - "rules/atlas_recording_rules.yml"
   - "rules/atlas_alerting_rules.yml"
+  - "rules/atlas_meta_alerting_rules.yml"
 
 # =============================================================================
 # Scrape Configurations
 # =============================================================================
 scrape_configs:
+
+  # Self-monitoring: required by atlas_meta_alerting_rules.yml
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]
 
   # ---------------------------------------------------------------------------
   # MongoDB Atlas Federation Endpoint -- Production Clusters
@@ -44,33 +53,29 @@ scrape_configs:
     metrics_path: /metrics
 
     basic_auth:
-      username: "REPLACE_WITH_ATLAS_USERNAME"
-      password_file: /etc/prometheus/secrets/atlas_password
+      username: "REPLACE_WITH_PROD_ATLAS_USERNAME"
+      password_file: /etc/prometheus/secrets/atlas_password_production
 
     http_sd_configs:
       - url: https://cloud.mongodb.com/prometheus/v1.0/groups/REPLACE_WITH_PROD_ATLAS_GROUP_ID/discovery
         refresh_interval: 2m
         basic_auth:
-          username: "REPLACE_WITH_ATLAS_USERNAME"
-          password_file: /etc/prometheus/secrets/atlas_password
+          username: "REPLACE_WITH_PROD_ATLAS_USERNAME"
+          password_file: /etc/prometheus/secrets/atlas_password_production
 
     # --- Target Relabeling (before scrape) ---
-    # Enrich all metrics with team and region context at scrape time
+    # Enrich all metrics with team/environment context at scrape time.
+    # Do not set `region`, `provider`, `cl_name`, etc. here: Atlas already
+    # exposes them, and a target label would overwrite the real values.
     relabel_configs:
       - target_label: team
         replacement: "platform-engineering"                 # Replace with your team
-
-      - target_label: region
-        replacement: "us-east-1"                           # Replace with your Atlas region
 
       - source_labels: [__address__]
         target_label: hostname
 
       - target_label: environment
         replacement: "production"
-
-      - target_label: cloud_provider
-        replacement: "atlas"
 
       - target_label: cluster_tier
         replacement: "M20"                                 # Replace with your tier
@@ -90,15 +95,8 @@ scrape_configs:
         regex: "mongodb_.*|atlas_.*|hardware_.*|QUERY_TARGETING_.*"
         action: keep
 
-      # -- LABELDROP: Remove process_port to avoid unnecessary cardinality
-      # Only drop if you don't need port-level granularity across replica set members
-      - regex: "process_port"
-        action: labeldrop
-
-      # -- LABELDROP: Remove raw node IDs if you only care about cluster-level aggregation
-      # Comment out if you need per-node debugging capability
-      # - regex: "node_id"
-      #   action: labeldrop
+      # Keep process_port: on sharded clusters mongod, mongos, and config
+      # processes share a host, and dropping it makes their series collide.
 
   # ---------------------------------------------------------------------------
   # MongoDB Atlas Federation Endpoint -- Staging Clusters (leaner config)
@@ -109,27 +107,23 @@ scrape_configs:
     metrics_path: /metrics
 
     basic_auth:
-      username: "REPLACE_WITH_ATLAS_USERNAME"
-      password_file: /etc/prometheus/secrets/atlas_password
+      username: "REPLACE_WITH_STAGING_ATLAS_USERNAME"
+      password_file: /etc/prometheus/secrets/atlas_password_staging
 
     http_sd_configs:
       - url: https://cloud.mongodb.com/prometheus/v1.0/groups/REPLACE_WITH_STAGING_ATLAS_GROUP_ID/discovery
         refresh_interval: 2m
         basic_auth:
-          username: "REPLACE_WITH_ATLAS_USERNAME"
-          password_file: /etc/prometheus/secrets/atlas_password
+          username: "REPLACE_WITH_STAGING_ATLAS_USERNAME"
+          password_file: /etc/prometheus/secrets/atlas_password_staging
 
     relabel_configs:
       - target_label: team
         replacement: "platform-engineering"
-      - target_label: region
-        replacement: "us-east-1"
       - source_labels: [__address__]
         target_label: hostname
       - target_label: environment
         replacement: "staging"
-      - target_label: cloud_provider
-        replacement: "atlas"
       - target_label: cluster_tier
         replacement: "M10"
 
@@ -144,5 +138,3 @@ scrape_configs:
         regex: "mongodb_.*|atlas_.*|hardware_.*|QUERY_TARGETING_.*"
         action: keep
 
-      - regex: "process_port"
-        action: labeldrop
