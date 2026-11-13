@@ -337,6 +337,18 @@ groups:
             mongodb_globalLock_currentQueue_total
           )
 
+      # Execution tickets: the concurrency limit on MongoDB 7.0+, where the
+      # global lock queue is a weak saturation signal. 7.0 reports them under
+      # wiredTiger.concurrentTransactions, later versions under queues.execution.
+      - record: node:mongodb_tickets_available:count
+        expr: |
+          max by (job, environment, region, availability_zone, group_id, cl_name, rs_nm, rs_state, node_type, instance, process_port, hostname, op) (
+            label_replace(mongodb_wiredTiger_concurrentTransactions_read_available, "op", "read", "__name__", ".*")
+            or label_replace(mongodb_wiredTiger_concurrentTransactions_write_available, "op", "write", "__name__", ".*")
+            or label_replace(mongodb_queues_execution_read_available, "op", "read", "__name__", ".*")
+            or label_replace(mongodb_queues_execution_write_available, "op", "write", "__name__", ".*")
+          )
+
   - name: atlas_replication_network_process
     interval: 60s
     rules:
@@ -369,10 +381,21 @@ groups:
           - on (job, environment, group_id, cl_name, rs_nm) group_right
             node:mongodb_oplog_latest:seconds{rs_state="2"}
 
+      - record: rs:mongodb_oplog_earliest_primary:seconds
+        expr: |
+          max by (job, environment, group_id, cl_name, rs_nm) (
+            mongodb_oplog_earliestOptime{rs_state="1"}
+          )
+
+      # A secondary can no longer catch up once its last applied entry is older
+      # than the oldest entry in its sync source's oplog (normally the
+      # primary), so headroom is measured against the primary's oplog, not the
+      # secondary's own window.
       - record: node:mongodb_replication_headroom:seconds
         expr: |
-          node:mongodb_oplog_window:seconds{rs_state="2"}
-          - node:mongodb_replication_lag:seconds
+          node:mongodb_oplog_latest:seconds{rs_state="2"}
+          - on (job, environment, group_id, cl_name, rs_nm) group_left
+            rs:mongodb_oplog_earliest_primary:seconds
 
       - record: node:mongodb_oplog_churn:gbytes_per_hour
         expr: |
@@ -415,16 +438,19 @@ groups:
             mongodb_repl_secondary
           )
 
-      - record: rs:mongodb_repl_secondary_role_changes:changes15m
+      # One election flips two nodes (old primary 0 -> 1, new primary 1 -> 0),
+      # so counting all changes double-counts. resets() counts only decreases,
+      # i.e. a node becoming primary: one per election.
+      - record: rs:mongodb_primary_elections:count15m
         expr: |
           sum by (job, environment, group_id, cl_name, rs_nm) (
-            changes(node:mongodb_repl_secondary:state[15m])
+            resets(node:mongodb_repl_secondary:state[15m])
           )
 
-      - record: rs:mongodb_repl_secondary_role_changes:changes1h
+      - record: rs:mongodb_primary_elections:count1h
         expr: |
           sum by (job, environment, group_id, cl_name, rs_nm) (
-            changes(node:mongodb_repl_secondary:state[1h])
+            resets(node:mongodb_repl_secondary:state[1h])
           )
 
   - name: atlas_performance_advisor

@@ -168,8 +168,77 @@ groups:
           description: "Node {{ $labels.instance }} is near connection exhaustion."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+  # WiredTiger starts using application threads for eviction when dirty data
+  # passes ~20% of the cache or total fill passes ~95%, which shows up
+  # directly as latency.
+  - name: atlas_wiredtiger_cache
+    rules:
+
+      - alert: AtlasWiredTigerDirtyCacheHigh
+        expr: node:mongodb_wiredtiger_cache_dirty_fill:ratio{node_type="ELECTABLE"} > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          signal: wt_dirty_cache
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#wiredtiger-cache"
+          summary: "Atlas WiredTiger dirty cache above 10%"
+          description: "Node {{ $labels.instance }} dirty data is {{ $value | humanizePercentage }} of the cache. Eviction is falling behind writes."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasWiredTigerDirtyCacheCritical
+        expr: node:mongodb_wiredtiger_cache_dirty_fill:ratio{node_type="ELECTABLE"} > 0.20
+        for: 5m
+        labels:
+          severity: critical
+          signal: wt_dirty_cache
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#wiredtiger-cache"
+          summary: "Atlas WiredTiger dirty cache above 20%"
+          description: "Node {{ $labels.instance }} dirty data is {{ $value | humanizePercentage }} of the cache. Application threads are doing eviction, which adds latency."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasWiredTigerCacheFull
+        expr: node:mongodb_wiredtiger_cache_fill:ratio{node_type="ELECTABLE"} > 0.95
+        for: 10m
+        labels:
+          severity: warning
+          signal: wt_cache_fill
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#wiredtiger-cache"
+          summary: "Atlas WiredTiger cache above 95% full"
+          description: "Node {{ $labels.instance }} cache is {{ $value | humanizePercentage }} full. Application threads are doing eviction; the working set may not fit in memory."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
   - name: atlas_recommended_alerts
     rules:
+
+      # Lag is primary latest optime minus secondary latest optime, each from
+      # its own scrape, so it can be off by up to one scrape interval (60s).
+      # The for: duration absorbs that noise.
+      - alert: AtlasReplicationLagHigh
+        expr: node:mongodb_replication_lag:seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          signal: replication_lag
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-lag"
+          summary: "Atlas replication lag above 60s"
+          description: "Secondary {{ $labels.instance }} is {{ $value | humanizeDuration }} behind the primary. Majority writes and secondary reads are affected."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
+      - alert: AtlasReplicationLagCritical
+        expr: node:mongodb_replication_lag:seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+          signal: replication_lag
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-lag"
+          summary: "Atlas replication lag above 5m"
+          description: "Secondary {{ $labels.instance }} is {{ $value | humanizeDuration }} behind the primary."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasReplicationHeadroomLow
         expr: node:mongodb_replication_headroom:seconds < 43200
@@ -243,6 +312,8 @@ groups:
           description: "Node {{ $labels.instance }} is experiencing sustained page faults."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      # The global lock queue is the saturation signal before MongoDB 7.0. On
+      # 7.0+ use AtlasExecutionTicketsExhausted instead.
       - alert: AtlasQueuedReadersOrWriters
         expr: |
           deriv(node:mongodb_global_lock_queue_total:count{node_type="ELECTABLE"}[5m]) > 0
@@ -271,20 +342,32 @@ groups:
           description: "Node {{ $labels.instance }} is showing sustained overload."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
+      - alert: AtlasExecutionTicketsExhausted
+        expr: node:mongodb_tickets_available:count{node_type="ELECTABLE"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          signal: tickets
+        annotations:
+          runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#execution-tickets"
+          summary: "Atlas {{ $labels.op }} execution tickets exhausted"
+          description: "Node {{ $labels.instance }} has had no {{ $labels.op }} tickets available for 5m. New operations are queuing."
+          context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
+
       - alert: AtlasPrimaryElectionDetected
-        expr: rs:mongodb_repl_secondary_role_changes:changes15m > 0
+        expr: rs:mongodb_primary_elections:count15m > 0
         for: 0m
         labels:
           severity: warning
           signal: elections
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
-          summary: "Atlas primary election or role change detected"
-          description: "Replica set {{ $labels.rs_nm }} had a role change in the last 15 minutes."
+          summary: "Atlas primary election detected"
+          description: "Replica set {{ $labels.rs_nm }} elected a new primary in the last 15 minutes."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasFrequentPrimaryElections
-        expr: rs:mongodb_repl_secondary_role_changes:changes1h > 1
+        expr: rs:mongodb_primary_elections:count1h > 1
         for: 0m
         labels:
           severity: critical
@@ -292,7 +375,7 @@ groups:
         annotations:
           runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
           summary: "Atlas frequent primary elections detected"
-          description: "Replica set {{ $labels.rs_nm }} had multiple role changes in the last hour."
+          description: "Replica set {{ $labels.rs_nm }} elected a new primary more than once in the last hour."
           context: "cluster={{ $labels.cl_name }} rs={{ $labels.rs_nm }} instance={{ $labels.instance }} node_type={{ $labels.node_type }} rs_state={{ $labels.rs_state }} az={{ $labels.availability_zone }} region={{ $labels.region }}"
 
       - alert: AtlasCpuSaturationHigh

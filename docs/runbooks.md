@@ -81,12 +81,32 @@ migrations, and the configured oplog size / minimum retention.
 **Mitigate:** Increase the oplog size or set a minimum oplog retention
 window in the cluster's advanced settings; throttle bulk writes.
 
+## replication-lag
+
+**Alerts:** `AtlasReplicationLagHigh` (>60 s), `AtlasReplicationLagCritical` (>5 min).
+
+**Meaning:** A secondary is behind the primary. Writes with `w: "majority"`
+wait longer, reads from secondaries return stale data, and failover to this
+node would roll back or lose recent writes. The value comes from two
+separate scrapes, so it can be off by up to one scrape interval (60 s).
+
+**Investigate:**
+- Disk I/O and CPU on the lagging secondary (the usual bottleneck).
+- Analytics or other heavy reads routed to that secondary.
+- Large write bursts or bulk loads on the primary (opcounters, oplog churn).
+- Network between regions for multi-region clusters.
+
+**Mitigate:** Move analytics reads to analytics nodes, throttle bulk writes,
+or scale the tier or disk IOPS. Watch `AtlasReplicationHeadroomLow`: if lag
+keeps growing, the secondary will fall off the oplog.
+
 ## replication-headroom
 
 **Alerts:** `AtlasReplicationHeadroomLow` (<12 h), `AtlasReplicationHeadroomCritical` (<1 h).
 
-**Meaning:** Oplog window minus the secondary's lag is shrinking; the
-secondary is close to falling off the oplog.
+**Meaning:** Time left before the secondary falls off the oplog: its last
+applied entry minus the oldest entry still in the primary's oplog. At zero,
+the secondary can no longer catch up and needs a full initial sync.
 
 **Investigate:** `node:mongodb_replication_lag:seconds` per secondary; CPU,
 disk, and network on the lagging secondary; heavy write bursts on the
@@ -136,9 +156,46 @@ changes in query patterns or data volume.
 **Mitigate:** Add indexes to reduce scanned data, trim the working set, or
 scale up to a tier with more RAM.
 
+## wiredtiger-cache
+
+**Alerts:** `AtlasWiredTigerDirtyCacheHigh` (dirty >10%),
+`AtlasWiredTigerDirtyCacheCritical` (dirty >20%), `AtlasWiredTigerCacheFull`
+(fill >95%).
+
+**Meaning:** WiredTiger can't evict pages fast enough. Past ~20% dirty or
+~95% full, application threads are drafted into eviction, so every
+operation gets slower. High dirty data usually means disk can't keep up with
+writes; a full cache means the working set doesn't fit in memory.
+
+**Investigate:**
+- Disk write latency and IOPS on the same node (dirty cache).
+- Write volume and bulk loads (opcounters, oplog churn).
+- Page faults, query targeting, and collection scans pulling cold data in
+  (cache fill).
+
+**Mitigate:** Throttle bulk writes, fix collection scans, add disk IOPS, or
+scale to a tier with more RAM.
+
+## execution-tickets
+
+**Alerts:** `AtlasExecutionTicketsExhausted` (no read or write tickets available for 5 min).
+
+**Meaning:** MongoDB caps how many operations run at once with read and
+write tickets; on 7.0+ the cap adjusts automatically. With none available,
+new operations wait in a queue and latency rises sharply. This is the
+saturation signal to use on MongoDB 7.0+; the lock-queue alerts below cover
+older versions.
+
+**Investigate:** Long-running operations (Atlas → Real Time Performance
+Panel), CPU, disk latency, WiredTiger cache pressure, and query targeting.
+
+**Mitigate:** Kill runaway operations, fix inefficient queries, or scale
+the tier.
+
 ## lock-queue
 
 **Alerts:** `AtlasQueuedReadersOrWriters` (queue growing), `AtlasQueuedReadersOrWritersCritical` (>10 queued).
+Most useful before MongoDB 7.0; on 7.0+ prefer [execution-tickets](#execution-tickets).
 
 **Meaning:** Operations are waiting for execution tickets or locks; the
 node is overloaded.
@@ -151,8 +208,8 @@ the tier.
 
 ## elections
 
-**Alerts:** `AtlasPrimaryElectionDetected` (any role change in 15 min),
-`AtlasFrequentPrimaryElections` (>1 change in 1 h).
+**Alerts:** `AtlasPrimaryElectionDetected` (a new primary in the last 15 min),
+`AtlasFrequentPrimaryElections` (more than one election in 1 h).
 
 **Meaning:** The replica set changed primary. A single election during
 Atlas maintenance is normal; repeated elections are not.

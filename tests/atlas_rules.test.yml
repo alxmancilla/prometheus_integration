@@ -55,6 +55,8 @@ tests:
         exp_samples: []
 
   # A single election triggers the detection alert but not the frequent one.
+  # Both nodes change role (n1 becomes primary, n2 steps down); that must
+  # count as one election, not two.
   - interval: 1m
     input_series:
       # Atlas flips the rs_state label on election, so the old series goes
@@ -63,6 +65,10 @@ tests:
         values: '1x10 stale'
       - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
         values: '_x10 0x30'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="1"}'
+        values: '0x10 stale'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+        values: '_x10 1x30'
     alert_rule_test:
       - alertname: AtlasFrequentPrimaryElections
         eval_time: 30m
@@ -78,17 +84,22 @@ tests:
               rs_nm: rs0
             exp_annotations:
               runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
-              summary: "Atlas primary election or role change detected"
-              description: "Replica set rs0 had a role change in the last 15 minutes."
+              summary: "Atlas primary election detected"
+              description: "Replica set rs0 elected a new primary in the last 15 minutes."
               context: "cluster=c1 rs=rs0 instance= node_type= rs_state= az= region="
 
-  # Two elections within an hour trigger the frequent-elections alert.
+  # Two elections within an hour (n1 takes over, then n2 takes back) trigger
+  # the frequent-elections alert.
   - interval: 1m
     input_series:
       - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="2"}'
         values: '1x10 stale _x9 1x20'
       - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
         values: '_x10 0x9 stale'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="1"}'
+        values: '0x10 stale _x9 0x20'
+      - series: 'mongodb_repl_secondary{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
+        values: '_x10 1x9 stale'
     alert_rule_test:
       - alertname: AtlasFrequentPrimaryElections
         eval_time: 30m
@@ -102,7 +113,7 @@ tests:
             exp_annotations:
               runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#elections"
               summary: "Atlas frequent primary elections detected"
-              description: "Replica set rs0 had multiple role changes in the last hour."
+              description: "Replica set rs0 elected a new primary more than once in the last hour."
               context: "cluster=c1 rs=rs0 instance= node_type= rs_state= az= region="
 
   # Meta alerts: scrape failure and missing rule inputs.
@@ -202,12 +213,15 @@ tests:
           - labels: 'node:mongodb_system_cpu_normalized:percent{job="atlas",instance="n1:27017"}'
             value: 90
 
-  # Replication: secondary 100s behind the primary with a 1500s oplog window
-  # leaves 1400s of headroom.
+  # Replication: the secondary is 100s behind the primary. Headroom is
+  # measured against the primary's oplog (earliest entry 1000), not the
+  # secondary's own larger window: 1500 - 1000 = 500s.
   - interval: 1m
     input_series:
       - series: 'mongodb_oplog_latestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
         values: '1000+60x10'
+      - series: 'mongodb_oplog_earliestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n1:27017",rs_state="1"}'
+        values: '1000x10'
       - series: 'mongodb_oplog_latestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
         values: '900+60x10'
       - series: 'mongodb_oplog_earliestOptime{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
@@ -222,7 +236,43 @@ tests:
         eval_time: 10m
         exp_samples:
           - labels: 'node:mongodb_replication_headroom:seconds{job="atlas",cl_name="c1",rs_nm="rs0",instance="n2:27017",rs_state="2"}'
-            value: 1400
+            value: 500
+    alert_rule_test:
+      - alertname: AtlasReplicationLagHigh
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: replication_lag
+              job: atlas
+              cl_name: c1
+              rs_nm: rs0
+              instance: "n2:27017"
+              rs_state: "2"
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-lag"
+              summary: "Atlas replication lag above 60s"
+              description: "Secondary n2:27017 is 1m 40s behind the primary. Majority writes and secondary reads are affected."
+              context: "cluster=c1 rs=rs0 instance=n2:27017 node_type= rs_state=2 az= region="
+      - alertname: AtlasReplicationLagCritical
+        eval_time: 10m
+        exp_alerts: []
+      - alertname: AtlasReplicationHeadroomCritical
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: replication_headroom
+              job: atlas
+              cl_name: c1
+              rs_nm: rs0
+              instance: "n2:27017"
+              rs_state: "2"
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#replication-headroom"
+              summary: "Atlas replication headroom below 1h"
+              description: "Secondary n2:27017 is close to falling off the oplog."
+              context: "cluster=c1 rs=rs0 instance=n2:27017 node_type= rs_state=2 az= region="
 
   # Query targeting: an idle node scanning ~120 docs/s while returning <1/s
   # must not alert; the same ratio under real load must.
@@ -251,3 +301,57 @@ tests:
               summary: "Atlas query targeting ratio above 100"
               description: "Node busy:27017 is scanning more than 100 documents per returned document. Check indexes and query shapes."
               context: "cluster= rs= instance=busy:27017 node_type=ELECTABLE rs_state= az= region="
+
+  # WiredTiger: 25% dirty -> critical (the warning is inhibited by Alertmanager,
+  # not by the rule, so it fires too); 90% fill is below the full threshold.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_wiredTiger_cache_tracked_dirty_bytes_in_the_cache{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '25x15'
+      - series: 'mongodb_wiredTiger_cache_bytes_currently_in_the_cache{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '90x15'
+      - series: 'mongodb_wiredTiger_cache_maximum_bytes_configured{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '100x15'
+    alert_rule_test:
+      - alertname: AtlasWiredTigerDirtyCacheCritical
+        eval_time: 12m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: wt_dirty_cache
+              job: atlas
+              instance: "n1:27017"
+              node_type: ELECTABLE
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#wiredtiger-cache"
+              summary: "Atlas WiredTiger dirty cache above 20%"
+              description: "Node n1:27017 dirty data is 25% of the cache. Application threads are doing eviction, which adds latency."
+              context: "cluster= rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="
+      - alertname: AtlasWiredTigerCacheFull
+        eval_time: 12m
+        exp_alerts: []
+
+  # Execution tickets: read tickets exhausted (7.0 metric name), write tickets
+  # available (queues.execution metric name) -> one alert, for reads.
+  - interval: 1m
+    input_series:
+      - series: 'mongodb_wiredTiger_concurrentTransactions_read_available{job="atlas",instance="n1:27017",node_type="ELECTABLE"}'
+        values: '0x10'
+      - series: 'mongodb_queues_execution_write_available{job="atlas",instance="n2:27017",node_type="ELECTABLE"}'
+        values: '5x10'
+    alert_rule_test:
+      - alertname: AtlasExecutionTicketsExhausted
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: tickets
+              job: atlas
+              instance: "n1:27017"
+              node_type: ELECTABLE
+              op: read
+            exp_annotations:
+              runbook_url: "https://github.com/alxmancilla/prometheus_integration/blob/main/docs/runbooks.md#execution-tickets"
+              summary: "Atlas read execution tickets exhausted"
+              description: "Node n1:27017 has had no read tickets available for 5m. New operations are queuing."
+              context: "cluster= rs= instance=n1:27017 node_type=ELECTABLE rs_state= az= region="

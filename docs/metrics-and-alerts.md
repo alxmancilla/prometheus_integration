@@ -14,10 +14,10 @@ cover the following top-20 signals:
 | 5 | Connections | `mongodb_connections_current`, `mongodb_connections_available` |
 | 6 | WiredTiger Cache | `mongodb_wiredTiger_cache_*` |
 | 7 | Query Targeting | `mongodb_metrics_queryExecutor_scannedObjects`, `mongodb_metrics_document_returned` |
-| 8 | Global Lock Queue | `mongodb_globalLock_currentQueue_*` |
+| 8 | Global Lock Queue / Execution Tickets | `mongodb_globalLock_currentQueue_*`; `mongodb_wiredTiger_concurrentTransactions_*_available` or `mongodb_queues_execution_*_available` (7.0+) |
 | 9 | Opcounters | `mongodb_opcounters_*` |
 | 10 | Scan and Order | `mongodb_metrics_operation_scanAndOrder`, `mongodb_metrics_query_sort_spillToDisk` |
-| 11 | Replication Safety | computed replication headroom from oplog window and secondary lag |
+| 11 | Replication Safety | computed secondary lag, and headroom against the primary's oplog |
 | 12 | Oplog Capacity | `mongodb_oplog_latestOptime`, `mongodb_oplog_earliestOptime` |
 | 13 | Oplog Churn | `mongodb_oplog_rate_gb_per_hour` / `mongodb_oplog_rateGbPerHour` when exposed |
 | 14 | Host Memory | `hardware_system_memory_mem_available_kilobytes`, `hardware_system_memory_mem_total_kilobytes` |
@@ -74,7 +74,10 @@ examples:
 - `node:mongodb_disk_space_used:ratio` — disk usage ratio
 - `node:mongodb_connections_utilization:ratio` — current / tier-limit connections, where Atlas exposes available connections
 - `node:mongodb_oplog_window:seconds` — oplog window per node
-- `node:mongodb_replication_headroom:seconds` — oplog window minus secondary lag
+- `node:mongodb_replication_lag:seconds` — how far each secondary is behind the primary
+- `node:mongodb_replication_headroom:seconds` — time before a secondary falls off the primary's oplog
+- `node:mongodb_tickets_available:count` — free read/write execution tickets (`op` label)
+- `rs:mongodb_primary_elections:count1h` — elections per replica set
 - `node:mongodb_wiredtiger_cache_fill:ratio` / `node:mongodb_wiredtiger_cache_dirty_fill:ratio` — WT cache ratios
 - `cluster:mongodb_opcounters_total:rate5m` — total operation rate per cluster
 - `namespace:mongodb_slow_queries:rate5m` — slow query rate by namespace when custom-exported
@@ -93,11 +96,14 @@ alerts are implemented with the requested starting thresholds:
 | Disk usage | `AtlasDiskUsageHigh` (>75%, 5m), `AtlasDiskUsageCritical` (>90%, 5m) |
 | Oplog window | `AtlasOplogWindowLow` (<24h, 5m), `AtlasOplogWindowCritical` (<1h, 10m) |
 | Connections | `AtlasConnectionUtilizationHigh` (>80%, 5m), `AtlasConnectionUtilizationCritical` (>90%, 5m) |
+| Replication lag | `AtlasReplicationLagHigh` (>60s, 5m), `AtlasReplicationLagCritical` (>5m, 5m) |
+| WiredTiger cache | `AtlasWiredTigerDirtyCacheHigh` (dirty >10%, 10m), `AtlasWiredTigerDirtyCacheCritical` (dirty >20%, 5m), `AtlasWiredTigerCacheFull` (fill >95%, 10m) |
+| Execution tickets (7.0+) | `AtlasExecutionTicketsExhausted` (no read or write tickets, 5m) |
 | Replication headroom | `AtlasReplicationHeadroomLow` (<12h, 5m), `AtlasReplicationHeadroomCritical` (<1h, 5m) |
 | System memory available | `AtlasSystemMemoryAvailableLow` (<75% of 7-day baseline, 10m), `AtlasSystemMemoryAvailableCritical` (<5%, 10m) |
 | Page faults | `AtlasPageFaultsHigh` (>50/s, 5m), `AtlasPageFaultsCritical` (>100/s, 5m) |
-| Queued readers/writers | `AtlasQueuedReadersOrWriters` (sustained queue growth, 5m), `AtlasQueuedReadersOrWritersCritical` (>10 queued readers or writers, 5m) |
-| Primary election | `AtlasPrimaryElectionDetected` (any role change), `AtlasFrequentPrimaryElections` (>1 role change in 1h) |
+| Queued readers/writers (pre-7.0) | `AtlasQueuedReadersOrWriters` (sustained queue growth, 5m), `AtlasQueuedReadersOrWritersCritical` (>10 queued readers or writers, 5m) |
+| Primary election | `AtlasPrimaryElectionDetected` (any election in 15m), `AtlasFrequentPrimaryElections` (>1 election in 1h) |
 | CPU saturation | `AtlasCpuSaturationHigh` (>80%, 5m), `AtlasCpuSaturationCritical` (>90%, 5m) |
 
 > **Thresholds are starting points.** The values above are drawn from
