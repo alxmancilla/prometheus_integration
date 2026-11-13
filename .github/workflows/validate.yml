@@ -17,6 +17,9 @@ jobs:
           echo dummy > secrets/atlas_password
           echo dummy > secrets/atlas_password_production
           echo dummy > secrets/atlas_password_staging
+          echo dummy > secrets/atlas_password_org
+          # Render a sample org-sync output so promtool validates its format.
+          python3 -c "import sys; sys.path.insert(0, 'scripts'); import atlas_org_sync as s; print(s.render_scrape_configs([{'id': '0123456789abcdef01234567', 'name': 'ci project'}], 'prom_user_{group_id}', '$PWD/secrets/atlas_password_org', '2m'), end='')" > scrape_configs/ci.yml
           for f in prometheus.yml prometheus-atlas.yml; do
             sed "s#/etc/prometheus/secrets#$PWD/secrets#" "$f" > "ci-$f"
           done

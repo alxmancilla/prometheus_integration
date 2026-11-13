@@ -21,6 +21,7 @@ newline-sensitive parsing — Prometheus reads the file verbatim).
 | `atlas_password` | Real Atlas Prometheus basic-auth password. **Not committed.** |
 | `atlas_password.example` | Placeholder; copy to `atlas_password` and edit. |
 | `atlas_password_production` / `atlas_password_staging` | Per-project passwords used by `prometheus-atlas.yml`. Copy from the matching `.example`. **Not committed.** |
+| `atlas_password_org` | Shared password that `scripts/atlas_org_sync.py` sets on every project's Prometheus integration. Copy from `atlas_password_org.example`. **Not committed.** |
 
 The Prometheus container runs as `nobody` (UID 65534), so the files must be
 readable by that user (e.g. `chmod 644`, or `chown 65534` + `chmod 400`).
